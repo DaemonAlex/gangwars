@@ -59,7 +59,6 @@ local function spawnGangMembers()
   end
 end
 
--- Function to make gangs fight each other
 local function makeGangsFight()
   for _, gang1 in ipairs(gangs) do
     for _, gang2 in ipairs(gangs) do
@@ -76,7 +75,6 @@ local function makeGangsFight()
   end
 end
 
--- Function to check if a player is nearby
 local function isPlayerNearby(ped)
   local players = GetActivePlayers()
   for _, player in ipairs(players) do
@@ -89,7 +87,28 @@ local function isPlayerNearby(ped)
   return false
 end
 
--- Main loop
+-- Function to target a player
+local function targetPlayer(playerId, gangId)
+  -- Set a timer and store the player's ID and gang ID
+  local timer = 15 * 60 * 1000 -- 15 minutes
+  local targetedPlayer = {
+    id = playerId,
+    gangId = gangId,
+    timer = timer
+  }
+  table.insert(targetedPlayers, targetedPlayer)
+end
+
+local function isPlayerTargeted(playerId)
+  -- Check if the player is in the targetedPlayers table
+  for _, targetedPlayer in ipairs(targetedPlayers) do
+    if targetedPlayer.id == playerId then
+      return true
+    end
+  end
+  return false
+end
+
 Citizen.CreateThread(function()
   spawnGangMembers()
   while true do
@@ -97,3 +116,6 @@ Citizen.CreateThread(function()
     makeGangsFight()
   end
 end)
+
+-- Targeted players table
+local targetedPlayers = {}
