@@ -39,7 +39,7 @@ The vehicles used by each gang are also configurable. Adjust the vehicle model l
     vehicles = {'buccaneer', 'peyote', 'voodoo', 'daemon', 'hexer'}
     ...
 }
-Saving Changes
+##Saving Changes
 After making changes in config.lua, save the file and restart your FiveM server for the changes to take effect.
 
 ##Coming Soon
