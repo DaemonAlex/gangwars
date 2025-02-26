@@ -25,7 +25,9 @@ A FiveM resource that brings a new level of realism and excitement to your serve
    ```plaintext
    ensure gang_wars
 Restart your server or use the refresh and start gang_wars commands in your server console to begin using the resource.
-Configuration
+
+## Configuration
+
 Configuring Gang Territories
 Each gang's territory is defined by coordinates in the config.lua file. To change the location of a gang's territory, adjust the x, y, and z values for that gang. For example:
 ['Ballas'] = {
@@ -39,6 +41,7 @@ The vehicles used by each gang are also configurable. Adjust the vehicle model l
     vehicles = {'buccaneer', 'peyote', 'voodoo', 'daemon', 'hexer'}
     ...
 }
+
 ##Saving Changes
 After making changes in config.lua, save the file and restart your FiveM server for the changes to take effect.
 
@@ -46,7 +49,8 @@ After making changes in config.lua, save the file and restart your FiveM server 
 More gang models and behaviors: Adding diversity and depth to the gang types available.
 Improved AI and pathfinding: Enhancements to how NPCs navigate and interact with the environment.
 Enhanced player interaction and influence: New ways for players to engage with and influence the gang ecosystem.
-Support
+
+## Support
 For support, feature requests, or bug reports, please submit an issue on the GitHub repository or contact us through our community support channels.
 
 We welcome contributions from the community. If you would like to contribute to the development of this resource, please make a pull request.
