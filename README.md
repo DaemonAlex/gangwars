@@ -32,11 +32,9 @@ Each gang's territory is defined by coordinates in the config.lua file. To chang
     territory = {x = 114.3, y = -1961.1, z = 21.3},
     ...
 }
-Adding or Removing Vehicles
+##Adding or Removing Vehicles
 The vehicles used by each gang are also configurable. Adjust the vehicle model list to change what vehicles gang members can drive:
 
-lua
-Copy
 ['Ballas'] = {
     vehicles = {'buccaneer', 'peyote', 'voodoo', 'daemon', 'hexer'}
     ...
@@ -44,7 +42,7 @@ Copy
 Saving Changes
 After making changes in config.lua, save the file and restart your FiveM server for the changes to take effect.
 
-Coming Soon
+##Coming Soon
 More gang models and behaviors: Adding diversity and depth to the gang types available.
 Improved AI and pathfinding: Enhancements to how NPCs navigate and interact with the environment.
 Enhanced player interaction and influence: New ways for players to engage with and influence the gang ecosystem.
@@ -55,6 +53,3 @@ We welcome contributions from the community. If you would like to contribute to 
 
 License
 Distributed under the MIT License. See LICENSE file for more information.
-
-pgsql
-Copy
