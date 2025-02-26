@@ -33,36 +33,42 @@ function spawnGangMember(gangName, offset, armed)
     local spawnY = gang.territory.y + offset.y
     local spawnZ = gang.territory.z + offset.z
     local coords = vector3(spawnX, spawnY, spawnZ)
+
     local modelPool = {table.unpack(gang.models), table.unpack(gang.streetVibeModels), table.unpack(gang.homelessModels), table.unpack(gang.workingModels)}
     local pedModel = modelPool[math.random(#modelPool)]
-    local ped = ox_lib:SpawnPed(pedModel, coords, true)
+    local ped = ox_lib:SpawnPed(pedModel, coords, true, true)  // Set the fourth parameter to true to ensure peds are networked
     SetPedAsGroupMember(ped, gangName)
     SetPedRelationshipGroupHash(ped, GetHashKey(gangName))
     TaskWanderStandard(ped, 10.0, 10)
-    if armed and math.random(1, 100) <= 80 then  -- 80% chance to arm the member
+    if armed and math.random(1, 100) <= 80 then  // 80% chance to arm the member
         GiveWeaponToPed(ped, GetHashKey("WEAPON_PISTOL"), 255, false, true)
     end
-end
+}
 
-function spawnGangVehicle(gangName, coords)
+function spawnGangVehicle(gangName, offset)
     local gang = Config.Gangs[gangName]
     local vehicleModel = gang.vehicles[math.random(#gang.vehicles)]
     RequestModel(vehicleModel)
     while not HasModelLoaded(vehicleModel) do
         Wait(500)
     end
-    local vehicle = CreateVehicle(GetHashKey(vehicleModel), coords.x, coords.y, coords.z, 0.0, true, false)
+
+    // Calculating obscure spawn point for vehicles
+    local spawnX = gang.territory.x + offset.x + 20  // Adjust the offset to ensure it spawns out of sight
+    local spawnY = gang.territory.y + offset.y + 20
+    local spawnZ = gang.territory.z
+    local vehicle = CreateVehicle(GetHashKey(vehicleModel), spawnX, spawnY, spawnZ, 0.0, true, false)
     SetVehicleColourCombination(vehicle, math.random(0, 12))
     return vehicle
-end
+}
 
 function gangFight(gangName)
     local gang = Config.Gangs[gangName]
     local offset = {x = math.random(-20, 20), y = math.random(-20, 20), z = 0}
-    spawnGangMember(gangName, offset, true)  
-    local vehicle = spawnGangVehicle(gangName, vector3(gang.territory.x + offset.x + 10, gang.territory.y + offset.y + 10, gang.territory.z))
-    TaskDriveBy(GetPedInVehicleSeat(vehicle, -1), 0, 0, 0, 0, 0, 0, 0, true, "FIRING_PATTERN_BURST_FIRE")
-end
+    spawnGangMember(gangName, offset, true)  // spawn armed gang member
+    local vehicleOffset = {x = -30, y = -30, z = 0}  // Additional offset for vehicle spawn
+    spawnGangVehicle(gangName, vehicleOffset)
+}
 
 Citizen.CreateThread(function()
     while true do
@@ -70,10 +76,10 @@ Citizen.CreateThread(function()
         Citizen.Wait(waitTime)
         for gangName, _ in pairs(Config.Gangs) do
             local offset = {x = math.random(-10, 10), y = math.random(-10, 10), z = 0}
-            spawnGangMember(gangName, offset, false)  
-            if math.random(1, 100) <= 50 then  
+            spawnGangMember(gangName, offset, false)  // spawn non-armed gang member
+            if math.random(1, 100) <= 50 then  // 50% chance to start a gang fight
                 gangFight(gangName)
-            end
+            }
         end
     end
 end)
