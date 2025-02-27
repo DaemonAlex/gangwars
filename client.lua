@@ -25,3 +25,8 @@ AddEventHandler('gangWars:playerEnteredTerritory', function(territory)
         duration = 7500
     })
 end)
+
+RegisterNetEvent('gangWars:notifyPathfinding')
+AddEventHandler('gangWars:notifyPathfinding', function(ped, destination)
+    TaskGoToCoordAnyMeans(ped, destination.x, destination.y, destination.z, 1.0, 0, 0, 786603, 0xbf800000)
+end)
