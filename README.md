@@ -24,36 +24,47 @@ A FiveM resource that brings a new level of realism and excitement to your serve
 4. **Add the resource to your server's configuration:**
    ```plaintext
    ensure gang_wars
-Restart your server or use the refresh and start gang_wars commands in your server console to begin using the resource.
+   ```
+5. **Restart your server or use the refresh and start gang_wars commands in your server console to begin using the resource.**
 
 ## Configuration
 
-Configuring Gang Territories
+### Configuring Gang Territories
+
 Each gang's territory is defined by coordinates in the config.lua file. To change the location of a gang's territory, adjust the x, y, and z values for that gang. For example:
+```lua
 ['Ballas'] = {
     territory = {x = 114.3, y = -1961.1, z = 21.3},
     ...
 }
-##Adding or Removing Vehicles
-The vehicles used by each gang are also configurable. Adjust the vehicle model list to change what vehicles gang members can drive:
+```
 
+### Adding or Removing Vehicles
+
+The vehicles used by each gang are also configurable. Adjust the vehicle model list to change what vehicles gang members can drive:
+```lua
 ['Ballas'] = {
     vehicles = {'buccaneer', 'peyote', 'voodoo', 'daemon', 'hexer'}
     ...
 }
+```
 
-##Saving Changes
+### Saving Changes
+
 After making changes in config.lua, save the file and restart your FiveM server for the changes to take effect.
 
-##Coming Soon
-More gang models and behaviors: Adding diversity and depth to the gang types available.
-Improved AI and pathfinding: Enhancements to how NPCs navigate and interact with the environment.
-Enhanced player interaction and influence: New ways for players to engage with and influence the gang ecosystem.
+## Coming Soon
+
+- More gang models and behaviors: Adding diversity and depth to the gang types available.
+- Improved AI and pathfinding: Enhancements to how NPCs navigate and interact with the environment.
+- Enhanced player interaction and influence: New ways for players to engage with and influence the gang ecosystem.
 
 ## Support
+
 For support, feature requests, or bug reports, please submit an issue on the GitHub repository or contact us through our community support channels.
 
 We welcome contributions from the community. If you would like to contribute to the development of this resource, please make a pull request.
 
-License
+## License
+
 Distributed under the MIT License. See LICENSE file for more information.
