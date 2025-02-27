@@ -2,8 +2,7 @@
 
 A FiveM resource that brings a new level of realism and excitement to your server with dynamic gang fights and player interaction. Gangs roam the streets of Los Santos, engaging in spontaneous skirmishes, defending their territories, and reacting to player actions. This script enhances the immersive experience by allowing players to influence gang dynamics, which can alter the course of gang wars and affect their outcomes.
 
-
-![images-1](https://github.com/user-attachments/assets/a43bf780-b81c-4cd1-93cd-a0a08f6ec903)
+![download-3](https://github.com/user-attachments/assets/adec31f4-caf0-4aca-83d5-cb592c859b0a)
 ![download](https://github.com/user-attachments/assets/bac84964-3943-486e-ae5b-e5c492b63b8c)
 ![images](https://github.com/user-attachments/assets/bff7795c-3329-4f6a-ad8f-1193b93733b6)
 ![download-2](https://github.com/user-attachments/assets/ab3a3263-8031-42fe-9ee3-39b4243e3bfd)
