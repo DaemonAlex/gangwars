@@ -61,6 +61,9 @@ function spawnGangMember(gangName, offset, armed)
     if armed and math.random(1, 100) <= 80 then
         GiveWeaponToPed(ped, GetHashKey("WEAPON_PISTOL"), 255, false, true)
     end
+
+    -- Improved pathfinding
+    TaskGoToCoordAnyMeans(ped, coords.x + math.random(-10, 10), coords.y + math.random(-10, 10), coords.z, 1.0, 0, 0, 786603, 0xbf800000)
 end
 
 function spawnGangVehicle(gangName, offset)
@@ -103,6 +106,10 @@ function gangFight(gangName)
     spawnGangMember(gangName, offset, true)
     offset = {x = offset.x + 10, y = offset.y + 10, z = 0}  -- Offset for vehicles to spawn nearby
     spawnGangVehicle(gangName, offset)
+end
+
+function handlePathfinding(ped, destination)
+    TaskGoToCoordAnyMeans(ped, destination.x, destination.y, destination.z, 1.0, 0, 0, 786603, 0xbf800000)
 end
 
 Citizen.CreateThread(function()
