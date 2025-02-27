@@ -1,5 +1,6 @@
 local Ox = exports.ox_lib
 
+Config = {}
 Config.Gangs = {
     ['Ballas'] = {
         territory = {x = 114.3, y = -1961.1, z = 21.3},
@@ -24,8 +25,19 @@ Config.Gangs = {
         homelessModels = {'a_m_m_tramp_01', 'a_m_o_soucent_03'},
         workingModels = {'s_m_m_autoshop_01', 's_m_m_autoshop_02'},
         vehicles = {'emperor', 'tornado', 'chino', 'sanctus', 'innovation'}
+    },
+    ['Aztecas'] = {
+        territory = {x = 410.2, y = -1500.3, z = 29.3},
+        models = {'g_m_y_azteca_01', 'g_m_y_azteca_02', 'g_m_y_azteca_03', 'csb_ortega'},
+        streetVibeModels = {'a_m_y_mexthug_01', 'a_m_y_mexthug_02'},
+        homelessModels = {'a_m_m_tramp_01', 'a_m_o_soucent_03'},
+        workingModels = {'s_m_y_construct_01', 's_m_y_construct_02'},
+        vehicles = {'tornado', 'buccaneer', 'peyote', 'voodoo', 'chino'}
     }
 }
+
+local spawnedPeds = {}
+local spawnedVehicles = {}
 
 function spawnGangMember(gangName, offset, armed)
     local gang = Config.Gangs[gangName]
@@ -33,7 +45,7 @@ function spawnGangMember(gangName, offset, armed)
     local modelPool = {table.unpack(gang.models), table.unpack(gang.streetVibeModels), table.unpack(gang.homelessModels), table.unpack(gang.workingModels)}
     local pedModel = modelPool[math.random(#modelPool)]
 
-    local ped = Ox.spawnPed({
+    local ped = Ox:spawnPed({
         model = pedModel,
         coords = coords,
         heading = math.random(360),
@@ -42,20 +54,21 @@ function spawnGangMember(gangName, offset, armed)
         freeze = false
     })
 
+    table.insert(spawnedPeds, ped)
     SetPedAsGroupMember(ped, gangName)
     SetPedRelationshipGroupHash(ped, GetHashKey(gangName))
     TaskWanderStandard(ped, 10.0, 10)
     if armed and math.random(1, 100) <= 80 then
         GiveWeaponToPed(ped, GetHashKey("WEAPON_PISTOL"), 255, false, true)
     end
-}
+end
 
 function spawnGangVehicle(gangName, offset)
     local gang = Config.Gangs[gangName]
     local coords = vector3(gang.territory.x + offset.x, gang.territory.y + offset.y, gang.territory.z)
     local vehicleModel = gang.vehicles[math.random(#gang.vehicles)]
 
-    local vehicle = Ox.spawnVehicle({
+    local vehicle = Ox:spawnVehicle({
         model = vehicleModel,
         coords = coords,
         heading = math.random(360),
@@ -63,9 +76,26 @@ function spawnGangVehicle(gangName, offset)
         persistent = false
     })
 
+    table.insert(spawnedVehicles, vehicle)
     SetVehicleColourCombination(vehicle, math.random(0, 12))
     return vehicle
-}
+end
+
+function cleanupEntities()
+    for _, ped in ipairs(spawnedPeds) do
+        if DoesEntityExist(ped) then
+            DeleteEntity(ped)
+        end
+    end
+    spawnedPeds = {}
+
+    for _, vehicle in ipairs(spawnedVehicles) do
+        if DoesEntityExist(vehicle) then
+            DeleteEntity(vehicle)
+        end
+    end
+    spawnedVehicles = {}
+end
 
 function gangFight(gangName)
     local gang = Config.Gangs[gangName]
@@ -73,18 +103,19 @@ function gangFight(gangName)
     spawnGangMember(gangName, offset, true)
     offset = {x = offset.x + 10, y = offset.y + 10, z = 0}  -- Offset for vehicles to spawn nearby
     spawnGangVehicle(gangName, offset)
-}
+end
 
 Citizen.CreateThread(function()
     while true do
-        local waitTime = math.random(15, 30) * 60000
+        local waitTime = math.random(30, 60) * 60000  -- Increased wait time to reduce spawn frequency
         Citizen.Wait(waitTime)
+        cleanupEntities()  -- Clean up entities before spawning new ones
         for gangName, _ in pairs(Config.Gangs) do
             local offset = {x = math.random(-10, 10), y = math.random(-10, 10), z = 0}
             spawnGangMember(gangName, offset, false)
             if math.random(1, 100) <= 50 then
                 gangFight(gangName)
-            }
+            end
         end
     end
 end)
