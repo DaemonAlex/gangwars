@@ -4,7 +4,7 @@ end
 
 local Ox = exports.ox_lib
 
--- ✅ Define Gangs and Their Territories
+-- Define Gangs and Their Territories
 Config.Gangs = {
     ['Ballas'] = {
         territory = {x = 114.3, y = -1961.1, z = 21.3},
@@ -33,34 +33,7 @@ Config.Gangs = {
     }
 }
 
--- ✅ Function to Spawn Gang Members
-function SpawnGangMembers(gangName)
-    local gang = Config.Gangs[gangName]
-    if not gang then 
-        print("^1ERROR:^0 Gang not found: " .. gangName)
-        return 
-    end
-
-    for i = 1, 5 do  -- Spawn 5 NPCs per gang
-        local pedModel = gang.models[math.random(#gang.models)]
-        RequestModel(pedModel)
-        while not HasModelLoaded(pedModel) do Wait(10) end
-
-        local ped = CreatePed(4, pedModel, gang.territory.x + math.random(-10, 10), gang.territory.y + math.random(-10, 10), gang.territory.z, 0.0, true, true)
-        GiveWeaponToPed(ped, GetHashKey("WEAPON_PISTOL"), 250, false, true)
-        TaskCombatHatedTargetsAroundPed(ped, 50.0, 0)
-        SetPedRelationshipGroupHash(ped, GetHashKey(gangName))
-        SetPedAccuracy(ped, 75)
-        SetPedCombatMovement(ped, 2) -- 2: Will move around in combat
-        SetPedCombatAbility(ped, 2) -- 2: Professional
-        SetPedCombatRange(ped, 2) -- 2: Far
-        SetPedCombatAttributes(ped, 46, true) -- Always fight
-    end
-
-    print("^2SUCCESS:^0 Spawned gang members for: " .. gangName)
-end
-
--- ✅ Event to Trigger a Gang War
+-- Gang War Trigger System
 RegisterNetEvent('gangWars:triggerGangWar')
 AddEventHandler('gangWars:triggerGangWar', function(gangName)
     if Config.Gangs[gangName] then
@@ -72,15 +45,46 @@ AddEventHandler('gangWars:triggerGangWar', function(gangName)
     end
 end)
 
--- ✅ Event to Handle Players Joining a Gang
-RegisterNetEvent('gangWars:playerJoinedGang')
-AddEventHandler('gangWars:playerJoinedGang', function(gangName)
-    local src = source
+-- Automatic Gang War Trigger: If a rival gang enters another's turf
+Citizen.CreateThread(function()
+    while true do
+        Wait(60000) -- Check every 60 seconds
+        for gangName, gangData in pairs(Config.Gangs) do
+            for rivalGang, rivalData in pairs(Config.Gangs) do
+                if gangName ~= rivalGang then
+                    local distance = #(vector3(gangData.territory.x, gangData.territory.y, gangData.territory.z) -
+                                       vector3(rivalData.territory.x, rivalData.territory.y, rivalData.territory.z))
+                    if distance < 100 then  -- If territories are close, a war starts
+                        TriggerEvent('gangWars:triggerGangWar', gangName)
+                        TriggerEvent('gangWars:triggerGangWar', rivalGang)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Random War Timer: Every 4 hours, start a fight between two gangs
+Citizen.CreateThread(function()
+    while true do
+        Wait(14400000) -- 4 hours (4 * 60 * 60 * 1000 milliseconds)
+        local gangList = {"Ballas", "Vagos", "Families", "Triads", "Madrazo"}
+        local randomGang1 = gangList[math.random(#gangList)]
+        local randomGang2 = gangList[math.random(#gangList)]
+        
+        if randomGang1 ~= randomGang2 then
+            print("^3INFO:^0 A major gang war has started between " .. randomGang1 .. " and " .. randomGang2 .. "!")
+            TriggerEvent('gangWars:triggerGangWar', randomGang1)
+            TriggerEvent('gangWars:triggerGangWar', randomGang2)
+        end
+    end
+end)
+
+-- Player-Triggered War: If a player attacks a gang, they fight back
+RegisterNetEvent('gangWars:playerAttackedGang')
+AddEventHandler('gangWars:playerAttackedGang', function(gangName)
     if Config.Gangs[gangName] then
-        print("^2SUCCESS:^0 Player " .. GetPlayerName(src) .. " joined " .. gangName)
-        TriggerClientEvent('ox_lib:notify', src, {title = 'Gang Joined', description = 'You are now part of ' .. gangName, type = 'success'})
-    else
-        print("^1ERROR:^0 Invalid gang: " .. gangName)
-        TriggerClientEvent('ox_lib:notify', src, {title = 'Error', description = 'Invalid gang.', type = 'error'})
+        print("^1ALERT:^0 Player attack detected on " .. gangName .. "! Retaliation initiated.")
+        TriggerEvent('gangWars:triggerGangWar', gangName)
     end
 end)
