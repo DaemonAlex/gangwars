@@ -1,6 +1,8 @@
 fx_version 'cerulean'
 games { 'gta5' }
 
+lua54 'yes'
+
 author 'Deamonalex'
 description 'Dynamic Gang Wars Script with Enhanced Interactions using ox_lib'
 version '1.0.0'
