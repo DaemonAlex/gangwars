@@ -33,19 +33,55 @@ Config.Gangs = {
     }
 }
 
--- Gang War Trigger System
+-- 🔥 FIXED: Function to Spawn Gang Members
+function SpawnGangMembers(gangName)
+    if not Config.Gangs[gangName] then
+        print("^1ERROR:^0 Invalid gang name: " .. tostring(gangName))
+        return
+    end
+
+    local gangData = Config.Gangs[gangName]
+
+    -- Ensure models and vehicles are loaded properly
+    for _, spawnPoint in pairs({gangData.territory}) do
+        local model = gangData.models[math.random(#gangData.models)]
+        local vehicle = gangData.vehicles[math.random(#gangData.vehicles)]
+
+        RequestModel(GetHashKey(model))
+        while not HasModelLoaded(GetHashKey(model)) do
+            Wait(100)
+        end
+
+        local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
+        SetPedCombatAttributes(ped, 46, true) -- Make them aggressive
+        GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
+        TaskCombatHatedTargetsAroundPed(ped, 50.0, 0)
+
+        RequestModel(GetHashKey(vehicle))
+        while not HasModelLoaded(GetHashKey(vehicle)) do
+            Wait(100)
+        end
+
+        local spawnedVehicle = CreateVehicle(GetHashKey(vehicle), spawnPoint.x + 2, spawnPoint.y + 2, spawnPoint.z, 0.0, true, false)
+        SetPedIntoVehicle(ped, spawnedVehicle, -1)
+    end
+
+    print("^2INFO:^0 Spawned gang members for " .. gangName)
+end
+
+-- 🚀 Gang War Trigger System
 RegisterNetEvent('gangWars:triggerGangWar')
 AddEventHandler('gangWars:triggerGangWar', function(gangName)
     if Config.Gangs[gangName] then
         print("^3INFO:^0 Gang War Started: " .. gangName)
-        SpawnGangMembers(gangName)
+        SpawnGangMembers(gangName) -- ✅ Now this function exists!
         TriggerClientEvent('gangWars:gangFightStarted', -1, Config.Gangs[gangName].territory)
     else
         print("^1ERROR:^0 Gang not found: " .. gangName)
     end
 end)
 
--- Automatic Gang War Trigger: If a rival gang enters another's turf
+-- 🏴 Automatic Gang War Trigger: Rival gangs fighting over territory
 Citizen.CreateThread(function()
     while true do
         Wait(60000) -- Check every 60 seconds
@@ -54,7 +90,7 @@ Citizen.CreateThread(function()
                 if gangName ~= rivalGang then
                     local distance = #(vector3(gangData.territory.x, gangData.territory.y, gangData.territory.z) -
                                        vector3(rivalData.territory.x, rivalData.territory.y, rivalData.territory.z))
-                    if distance < 100 then  -- If territories are close, a war starts
+                    if distance < 100 then  -- If territories are close, start a war
                         TriggerEvent('gangWars:triggerGangWar', gangName)
                         TriggerEvent('gangWars:triggerGangWar', rivalGang)
                     end
@@ -64,7 +100,7 @@ Citizen.CreateThread(function()
     end
 end)
 
--- Random War Timer: Every 4 hours, start a fight between two gangs
+-- 🔁 Random Gang War Every 4 Hours
 Citizen.CreateThread(function()
     while true do
         Wait(14400000) -- 4 hours (4 * 60 * 60 * 1000 milliseconds)
@@ -80,7 +116,7 @@ Citizen.CreateThread(function()
     end
 end)
 
--- Player-Triggered War: If a player attacks a gang, they fight back
+-- ⚠️ Player-Triggered Gang War
 RegisterNetEvent('gangWars:playerAttackedGang')
 AddEventHandler('gangWars:playerAttackedGang', function(gangName)
     if Config.Gangs[gangName] then
