@@ -3,6 +3,7 @@ if not Config then
 end
 
 local Ox = exports.ox_lib
+local QBCore = exports['qb-core']:GetCoreObject()
 
 -- Define Gangs and Their Territories
 Config.Gangs = {
@@ -33,7 +34,7 @@ Config.Gangs = {
     }
 }
 
--- 🔥 FIXED: Function to Spawn Gang Members
+-- 🔥 Function to Spawn Gang Members
 function SpawnGangMembers(gangName)
     if not Config.Gangs[gangName] then
         print("^1ERROR:^0 Invalid gang name: " .. tostring(gangName))
@@ -47,23 +48,31 @@ function SpawnGangMembers(gangName)
         local model = gangData.models[math.random(#gangData.models)]
         local vehicle = gangData.vehicles[math.random(#gangData.vehicles)]
 
+        -- Load Ped Model
         RequestModel(GetHashKey(model))
         while not HasModelLoaded(GetHashKey(model)) do
-            Wait(100)
+            Citizen.Wait(100)
         end
 
+        -- Spawn Gang Member
         local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
         SetPedCombatAttributes(ped, 46, true) -- Make them aggressive
         GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
         TaskCombatHatedTargetsAroundPed(ped, 50.0, 0)
 
+        -- Load Vehicle Model
         RequestModel(GetHashKey(vehicle))
         while not HasModelLoaded(GetHashKey(vehicle)) do
-            Wait(100)
+            Citizen.Wait(100)
         end
 
+        -- Spawn Vehicle
         local spawnedVehicle = CreateVehicle(GetHashKey(vehicle), spawnPoint.x + 2, spawnPoint.y + 2, spawnPoint.z, 0.0, true, false)
         SetPedIntoVehicle(ped, spawnedVehicle, -1)
+
+        -- Clean Up
+        SetEntityAsNoLongerNeeded(ped)
+        SetEntityAsNoLongerNeeded(spawnedVehicle)
     end
 
     print("^2INFO:^0 Spawned gang members for " .. gangName)
@@ -74,7 +83,7 @@ RegisterNetEvent('gangWars:triggerGangWar')
 AddEventHandler('gangWars:triggerGangWar', function(gangName)
     if Config.Gangs[gangName] then
         print("^3INFO:^0 Gang War Started: " .. gangName)
-        SpawnGangMembers(gangName) -- ✅ Now this function exists!
+        SpawnGangMembers(gangName)
         TriggerClientEvent('gangWars:gangFightStarted', -1, Config.Gangs[gangName].territory)
     else
         print("^1ERROR:^0 Gang not found: " .. gangName)
@@ -84,11 +93,11 @@ end)
 -- 🏴 Automatic Gang War Trigger: Rival gangs fighting over territory
 Citizen.CreateThread(function()
     while true do
-        Wait(60000) -- Check every 60 seconds
+        Citizen.Wait(60000) -- Check every 60 seconds
         for gangName, gangData in pairs(Config.Gangs) do
             for rivalGang, rivalData in pairs(Config.Gangs) do
                 if gangName ~= rivalGang then
-                    local distance = #(vector3(gangData.territory.x, gangData.territory.y, gangData.territory.z) -
+                    local distance = #(vector3(gangData.territory.x, gangData.territory.y, gangData.territory.z) - 
                                        vector3(rivalData.territory.x, rivalData.territory.y, rivalData.territory.z))
                     if distance < 100 then  -- If territories are close, start a war
                         TriggerEvent('gangWars:triggerGangWar', gangName)
@@ -103,7 +112,7 @@ end)
 -- 🔁 Random Gang War Every 4 Hours
 Citizen.CreateThread(function()
     while true do
-        Wait(14400000) -- 4 hours (4 * 60 * 60 * 1000 milliseconds)
+        Citizen.Wait(14400000) -- 4 hours (4 * 60 * 60 * 1000 milliseconds)
         local gangList = {"Ballas", "Vagos", "Families", "Triads", "Madrazo"}
         local randomGang1 = gangList[math.random(#gangList)]
         local randomGang2 = gangList[math.random(#gangList)]
