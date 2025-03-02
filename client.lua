@@ -1,4 +1,5 @@
 local Ox = exports.ox_lib
+local QBCore = exports['qb-core']:GetCoreObject()
 
 -- Notify Players Near Gang Areas of Gang Activity
 RegisterNetEvent('gangWars:notifyGangActivity')
@@ -9,7 +10,7 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
     local distance = #(vector3(playerCoords.x, playerCoords.y, playerCoords.z) - vector3(gangTerritory.x, gangTerritory.y, gangTerritory.z))
     
     if distance < 500.0 then -- Only notify players within 500 meters of the gang territory
-        Ox.ShowNotification({
+        lib.notify({
             title = 'Gang Activity',
             description = message,
             type = 'error',
@@ -18,9 +19,9 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
     end
 
     -- Notify police if gangs are shooting
-    local playerJob = exports['qb-core']:GetPlayerData().job.name
+    local playerJob = QBCore.Functions.GetPlayerData().job.name
     if playerJob == 'police' then
-        Ox.ShowNotification({
+        lib.notify({
             title = 'Police Alert',
             description = 'Gunshots reported in a gang territory!',
             type = 'warning',
@@ -32,14 +33,14 @@ end)
 -- Play Effects When a Gang Fight Starts
 RegisterNetEvent('gangWars:gangFightStarted')
 AddEventHandler('gangWars:gangFightStarted', function(coords)
-    PlaySoundFromCoord(-1, "BANG", coords.x, coords.y, coords.z, "DLC_IE_Explosive_Ammo_Sounds", true, 120, true)
+    PlaySoundFromCoord(-1, "GENERIC_GUN_SHOT", coords.x, coords.y, coords.z, "DLC_HEISTS_GENERAL_FRONTEND_SOUNDS", true, 120, true)
     StartParticleFxLoopedAtCoord("scr_rcbarry2", coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 1.0, false, false, false, false)
 end)
 
 -- Detect If a Player Shoots a Gang Member and Notify the Server
 Citizen.CreateThread(function()
     while true do
-        Wait(1000)  -- Check every second
+        Citizen.Wait(1000)  -- Check every second
         local playerPed = PlayerPedId()
         if IsPedShooting(playerPed) then
             local _, entity = GetEntityPlayerIsFreeAimingAt(PlayerId())
@@ -63,7 +64,12 @@ end)
 RegisterCommand('joingang', function(source, args)
     local gang = args[1]  -- Example: /joingang Ballas
     if not Config.Gangs[gang] then
-        TriggerEvent('ox_lib:notify', {title = 'Error', description = 'Invalid gang.', type = 'error', duration = 5000})
+        lib.notify({
+            title = 'Error',
+            description = 'Invalid gang.',
+            type = 'error',
+            duration = 5000
+        })
         return
     end
     TriggerServerEvent('gangWars:playerJoinedGang', gang)
