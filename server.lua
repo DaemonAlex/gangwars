@@ -1,6 +1,5 @@
-if not Config then
-    print("^1ERROR:^0 Config is not loaded! Check fxmanifest.lua.")
-end
+print("^2DEBUG:^0 Config:", Config)
+print("^2DEBUG:^0 Config.Gangs:", Config.Gangs)
 
 local Ox = exports.ox_lib
 local QBCore = exports['qb-core']:GetCoreObject()
