@@ -1,4 +1,4 @@
-Config = {}
+Config = Config or {}
 
 -- Gang Data (Territories, NPCs, and Vehicles)
 Config.Gangs = {
