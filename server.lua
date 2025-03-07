@@ -116,3 +116,9 @@ AddEventHandler('gangWars:playerAttackedGang', function(gangName)
         TriggerEvent('gangWars:triggerGangWar', gangName)
     end
 end)
+
+RegisterNetEvent("gangwars:spawnGangMembers")
+AddEventHandler("gangwars:spawnGangMembers", function(gangData)
+    local src = source
+    TriggerClientEvent("gangwars:spawnGangMembers", src, gangData)
+end)
