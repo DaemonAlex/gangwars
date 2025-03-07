@@ -19,8 +19,8 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
     end
 
     -- Notify police if gangs are shooting
-    local playerJob = QBCore.Functions.GetPlayerData().job.name
-    if playerJob == 'police' then
+local playerData = QBCore.Functions.GetPlayerData()
+if playerData and playerData.job and playerData.job.name == 'police' then
         lib.notify({
             title = 'Police Alert',
             description = 'Gunshots reported in a gang territory!',
