@@ -33,7 +33,6 @@ Config.Gangs = {
     }
 }
 
--- 🔥 Function to Spawn Gang Members
 function SpawnGangMembers(gangName)
     if not Config.Gangs[gangName] then
         print("^1ERROR:^0 Invalid gang name: " .. tostring(gangName))
@@ -42,7 +41,6 @@ function SpawnGangMembers(gangName)
 
     local gangData = Config.Gangs[gangName]
 
-    -- Ensure models and vehicles are loaded properly
     for _, spawnPoint in pairs({gangData.territory}) do
         local model = gangData.models[math.random(#gangData.models)]
         local vehicle = gangData.vehicles[math.random(#gangData.vehicles)]
@@ -60,7 +58,6 @@ function SpawnGangMembers(gangName)
         local spawnedVehicle = CreateVehicle(GetHashKey(vehicle), spawnPoint.x + 2, spawnPoint.y + 2, spawnPoint.z, 0.0, true, false)
         SetPedIntoVehicle(ped, spawnedVehicle, -1)
 
-        -- Clean Up
         SetEntityAsNoLongerNeeded(ped)
         SetEntityAsNoLongerNeeded(spawnedVehicle)
     end
@@ -68,7 +65,6 @@ function SpawnGangMembers(gangName)
     print("^2INFO:^0 Spawned gang members for " .. gangName)
 end
 
--- 🚀 Gang War Trigger System
 RegisterNetEvent('gangWars:triggerGangWar')
 AddEventHandler('gangWars:triggerGangWar', function(gangName)
     if Config.Gangs[gangName] then
@@ -80,10 +76,9 @@ AddEventHandler('gangWars:triggerGangWar', function(gangName)
     end
 end)
 
--- 🏴 Automatic Gang War Trigger: Rival gangs fighting over territory
 Citizen.CreateThread(function()
     while true do
-        Citizen.Wait(60000) -- Check every 60 seconds
+        Citizen.Wait(60000)
         for gangName, gangData in pairs(Config.Gangs) do
             for rivalGang, rivalData in pairs(Config.Gangs) do
                 if gangName ~= rivalGang then
@@ -99,10 +94,9 @@ Citizen.CreateThread(function()
     end
 end)
 
--- 🔁 Random Gang War Every 4 Hours
 Citizen.CreateThread(function()
     while true do
-        Citizen.Wait(14400000) -- 4 hours (4 * 60 * 60 * 1000 milliseconds)
+        Citizen.Wait(14400000) 
         local gangList = {"Ballas", "Vagos", "Families", "Triads", "Madrazo"}
         local randomGang1 = gangList[math.random(#gangList)]
         local randomGang2 = gangList[math.random(#gangList)]
@@ -115,7 +109,6 @@ Citizen.CreateThread(function()
     end
 end)
 
--- ⚠️ Player-Triggered Gang War
 RegisterNetEvent('gangWars:playerAttackedGang')
 AddEventHandler('gangWars:playerAttackedGang', function(gangName)
     if Config.Gangs[gangName] then
