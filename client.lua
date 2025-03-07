@@ -60,6 +60,23 @@ Citizen.CreateThread(function()
     end
 end)
 
+RegisterNetEvent("gangwars:spawnGangMembers")
+AddEventHandler("gangwars:spawnGangMembers", function(gangData)
+    for _, spawnPoint in pairs({gangData.territory}) do
+        local model = gangData.models[math.random(#gangData.models)]
+        local vehicle = gangData.vehicles[math.random(#gangData.vehicles)]
+
+        -- Load Ped Model (now on client-side)
+        RequestModel(GetHashKey(model))
+        while not HasModelLoaded(GetHashKey(model)) do
+            Citizen.Wait(100)
+        end
+
+        -- Spawn the ped (example)
+        local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, false)
+        SetPedAsGroupMember(ped, GetHashKey("GANG_GROUP"))
+    end
+end)
 -- Player Command to Join a Gang
 RegisterCommand('joingang', function(source, args)
     local gang = args[1]  -- Example: /joingang Ballas
