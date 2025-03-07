@@ -47,25 +47,16 @@ function SpawnGangMembers(gangName)
         local model = gangData.models[math.random(#gangData.models)]
         local vehicle = gangData.vehicles[math.random(#gangData.vehicles)]
 
-        -- Load Ped Model
-        RequestModel(GetHashKey(model))
-        while not HasModelLoaded(GetHashKey(model)) do
-            Citizen.Wait(100)
-        end
-
-        -- Spawn Gang Member
         local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
         SetPedCombatAttributes(ped, 46, true) -- Make them aggressive
         GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
         TaskCombatHatedTargetsAroundPed(ped, 50.0, 0)
 
-        -- Load Vehicle Model
         RequestModel(GetHashKey(vehicle))
         while not HasModelLoaded(GetHashKey(vehicle)) do
             Citizen.Wait(100)
         end
 
-        -- Spawn Vehicle
         local spawnedVehicle = CreateVehicle(GetHashKey(vehicle), spawnPoint.x + 2, spawnPoint.y + 2, spawnPoint.z, 0.0, true, false)
         SetPedIntoVehicle(ped, spawnedVehicle, -1)
 
