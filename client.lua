@@ -1,4 +1,4 @@
-local Ox = exports.ox_lib
+local lib = exports.ox_lib
 local QBCore = exports['qb-core']:GetCoreObject()
 
 -- Notify Players Near Gang Areas of Gang Activity
