@@ -1,5 +1,5 @@
 local lib = exports.ox_lib
-local QBCore = exports['qb-core']:GetCoreObject()
+local Ox = exports.ox_lib
 
 -- Notify Players Near Gang Areas of Gang Activity
 RegisterNetEvent('gangWars:notifyGangActivity')
@@ -62,7 +62,7 @@ end)
 
 RegisterNetEvent("gangwars:spawnGangMembers")
 AddEventHandler("gangwars:spawnGangMembers", function(gangData)
-    for _, spawnPoint in pairs({gangData.territory}) do
+    for _, spawnPoint in ipairs(gangData.territory) do
         local model = gangData.models[math.random(#gangData.models)]
         local vehicle = gangData.vehicles[math.random(#gangData.vehicles)]
 
