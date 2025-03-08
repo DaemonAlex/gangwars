@@ -19,7 +19,7 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
     end
 
     local playerData = QBCore.Functions.GetPlayerData()
-    if playerData and playerData.job and Config.PoliceJobs[playerData.job.name] then
+    if playerData and playerData.job and Config.PoliceJobs and Config.PoliceJobs[playerData.job.name] then
         lib.notify({
             title = 'Police Alert',
             description = 'Gunshots reported in a gang territory!',
@@ -37,17 +37,18 @@ end)
 
 Citizen.CreateThread(function()
     while true do
-        Citizen.Wait(1000)
+        Citizen.Wait(500)  -- Reduced check time for better response
         local playerPed = PlayerPedId()
         if IsPedShooting(playerPed) then
             local _, entity = GetEntityPlayerIsFreeAimingAt(PlayerId())
-            if DoesEntityExist(entity) and IsPedAPlayer(entity) == false then
+            if DoesEntityExist(entity) and not IsPedAPlayer(entity) then
                 local entityModel = GetEntityModel(entity)
 
                 for gangName, gangData in pairs(Config.Gangs) do
                     for _, model in ipairs(gangData.models) do
                         if GetHashKey(model) == entityModel then
                             TriggerServerEvent('gangWars:playerAttackedGang', gangName)
+                            return  -- Prevent multiple triggers for one shot
                         end
                     end
                 end
@@ -68,20 +69,26 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
 
         local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
 
+        -- Assign Weapons & Make NPCs Aggressive
         GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
-        SetPedCombatAttributes(ped, 46, true)
-        SetPedCombatAttributes(ped, 5, true)
+        SetPedCombatAttributes(ped, 46, true)  -- Never flee
+        SetPedCombatAttributes(ped, 5, true)   -- Can flee if health is low
         SetPedAsEnemy(ped, true)
         SetPedRelationshipGroupHash(ped, GetHashKey("GANG_GROUP"))
 
         -- Improved NPC Combat Behavior
-        TaskCombatPed(ped, PlayerPedId(), 0, 16)
+        TaskCombatHatedTargetsAroundPed(ped, 150.0, 0)  -- Engage any nearby threats
         SetPedCombatMovement(ped, 3)  -- NPCs will chase players
         SetPedCombatAbility(ped, 2)  -- NPCs will shoot accurately
         SetPedCombatRange(ped, 2)  -- NPCs will attack from a distance
         SetPedCombatAttributes(ped, 46, true)  -- NPCs will never flee
         SetPedCombatAttributes(ped, 0, true)  -- NPCs will use cover
-        TaskCombatHatedTargetsAroundPed(ped, 100.0, 0)
+        SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)  -- Ensure they hold the gun
+        SetPedAccuracy(ped, 60)  -- Improve NPC shooting accuracy
+        SetPedSeeingRange(ped, 100.0)  -- NPCs detect players from a distance
+        SetPedHearingRange(ped, 80.0)  -- NPCs hear gunshots nearby
+        SetPedAlertness(ped, 3)  -- NPCs react faster
+        TaskReloadWeapon(ped, true)  -- NPCs will reload
 
         SetModelAsNoLongerNeeded(GetHashKey(model))
     end
@@ -89,10 +96,10 @@ end)
 
 RegisterCommand('joingang', function(source, args)
     local gang = args[1]
-    if not gang then
+    if not gang or not Config.Gangs[gang] then
         lib.notify({
             title = 'Error',
-            description = 'You must specify a gang name.',
+            description = 'Invalid gang name. Available: Ballas, Vagos, Families.',
             type = 'error',
             duration = 5000
         })
