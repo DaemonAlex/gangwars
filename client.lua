@@ -37,7 +37,7 @@ end)
 
 Citizen.CreateThread(function()
     while true do
-        Citizen.Wait(500)  -- Reduced check time for better response
+        Citizen.Wait(500)  
         local playerPed = PlayerPedId()
         if IsPedShooting(playerPed) then
             local _, entity = GetEntityPlayerIsFreeAimingAt(PlayerId())
@@ -48,7 +48,7 @@ Citizen.CreateThread(function()
                     for _, model in ipairs(gangData.models) do
                         if GetHashKey(model) == entityModel then
                             TriggerServerEvent('gangWars:playerAttackedGang', gangName)
-                            return  -- Prevent multiple triggers for one shot
+                            return  
                         end
                     end
                 end
@@ -71,25 +71,25 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
 
         -- Assign Weapons & Make NPCs Aggressive
         GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
-        SetPedCombatAttributes(ped, 46, true)  -- Never flee
-        SetPedCombatAttributes(ped, 5, true)   -- Can flee if health is low
+        SetPedCombatAttributes(ped, 46, true)  
+        SetPedCombatAttributes(ped, 5, true)  
         SetPedAsEnemy(ped, true)
         SetPedRelationshipGroupHash(ped, GetHashKey("GANG_GROUP"))
 
         -- Improved NPC Combat Behavior
-        Citizen.Wait(math.random(1000, 3000))  -- Random delay before engagement
-        TaskCombatHatedTargetsAroundPed(ped, 150.0, 0)  -- Engage any nearby threats
-        SetPedCombatMovement(ped, 3)  -- NPCs will chase players
-        SetPedCombatAbility(ped, 2)  -- NPCs will shoot accurately
-        SetPedCombatRange(ped, 2)  -- NPCs will attack from a distance
-        SetPedCombatAttributes(ped, 46, true)  -- NPCs will never flee
-        SetPedCombatAttributes(ped, 0, true)  -- NPCs will use cover
-        SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)  -- Ensure they hold the gun
-        SetPedAccuracy(ped, 60)  -- Improve NPC shooting accuracy
-        SetPedSeeingRange(ped, 100.0)  -- NPCs detect players from a distance
-        SetPedHearingRange(ped, 80.0)  -- NPCs hear gunshots nearby
-        SetPedAlertness(ped, 3)  -- NPCs react faster
-        TaskReloadWeapon(ped, true)  -- NPCs will reload
+        Citizen.Wait(math.random(1000, 3000))  
+        TaskCombatHatedTargetsAroundPed(ped, 150.0, 0)  
+        SetPedCombatMovement(ped, 3)  
+        SetPedCombatAbility(ped, 2)  
+        SetPedCombatRange(ped, 2)  
+        SetPedCombatAttributes(ped, 46, true)  
+        SetPedCombatAttributes(ped, 0, true)  
+        SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)  
+        SetPedAccuracy(ped, 60)  
+        SetPedSeeingRange(ped, 100.0)  
+        SetPedHearingRange(ped, 80.0)  
+        SetPedAlertness(ped, 3)  
+        TaskReloadWeapon(ped, true)  
 
         SetModelAsNoLongerNeeded(GetHashKey(model))
     end
