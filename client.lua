@@ -1,12 +1,12 @@
 local lib = exports.ox_lib
 local QBCore = exports['qb-core']:GetCoreObject()
-local Config = Config or {}
+Config = Config or { Gangs = {}, PoliceJobs = {} }
 
 RegisterNetEvent('gangWars:notifyGangActivity')
 AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
     local playerPed = PlayerPedId()
     local playerCoords = GetEntityCoords(playerPed)
-    
+
     local distance = #(vector3(playerCoords.x, playerCoords.y, playerCoords.z) - vector3(gangTerritory.x, gangTerritory.y, gangTerritory.z))
     
     if distance < 500.0 then
@@ -77,6 +77,7 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
         SetPedRelationshipGroupHash(ped, GetHashKey("GANG_GROUP"))
 
         -- Improved NPC Combat Behavior
+        Citizen.Wait(math.random(1000, 3000))  -- Random delay before engagement
         TaskCombatHatedTargetsAroundPed(ped, 150.0, 0)  -- Engage any nearby threats
         SetPedCombatMovement(ped, 3)  -- NPCs will chase players
         SetPedCombatAbility(ped, 2)  -- NPCs will shoot accurately
