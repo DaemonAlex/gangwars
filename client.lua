@@ -1,5 +1,6 @@
 local lib = exports.ox_lib
 local QBCore = exports['qb-core']:GetCoreObject()
+local Config = Config or {}
 
 RegisterNetEvent('gangWars:notifyGangActivity')
 AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
@@ -73,26 +74,4 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
         SetPedAsEnemy(ped, true)
         SetPedRelationshipGroupHash(ped, GetHashKey("GANG_GROUP"))
 
-        TaskCombatPed(ped, GetPlayerPed(-1), 0, 16)
-        SetPedCombatMovement(ped, 2)
-        SetPedCombatAbility(ped, 2)
-        SetPedCombatRange(ped, 2)
-        SetPedCombatAttributes(ped, 46, true)
-
-        SetModelAsNoLongerNeeded(GetHashKey(model))
-    end
-end)
-
-RegisterCommand('joingang', function(source, args)
-    local gang = args[1]
-    if not gang then
-        lib.notify({
-            title = 'Error',
-            description = 'You must specify a gang name.',
-            type = 'error',
-            duration = 5000
-        })
-        return
-    end
-    TriggerServerEvent('gangWars:playerJoinedGang', gang)
-end, false)
+        -- Improved NPC Combat Beha
