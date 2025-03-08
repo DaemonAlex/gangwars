@@ -18,7 +18,7 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
     end
 
     local playerData = QBCore.Functions.GetPlayerData()
-    if playerData and playerData.job and playerData.job.name == 'police' then
+    if playerData and playerData.job and Config.PoliceJobs[playerData.job.name] then
         lib.notify({
             title = 'Police Alert',
             description = 'Gunshots reported in a gang territory!',
@@ -42,7 +42,14 @@ Citizen.CreateThread(function()
             local _, entity = GetEntityPlayerIsFreeAimingAt(PlayerId())
             if DoesEntityExist(entity) and IsPedAPlayer(entity) == false then
                 local entityModel = GetEntityModel(entity)
-                TriggerServerEvent('gangWars:playerAttackedGang', entityModel)
+
+                for gangName, gangData in pairs(Config.Gangs) do
+                    for _, model in ipairs(gangData.models) do
+                        if GetHashKey(model) == entityModel then
+                            TriggerServerEvent('gangWars:playerAttackedGang', gangName)
+                        end
+                    end
+                end
             end
         end
     end
@@ -66,7 +73,11 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
         SetPedAsEnemy(ped, true)
         SetPedRelationshipGroupHash(ped, GetHashKey("GANG_GROUP"))
 
-        TaskCombatPed(ped, PlayerPedId(), 0, 16)
+        TaskCombatPed(ped, GetPlayerPed(-1), 0, 16)
+        SetPedCombatMovement(ped, 2)
+        SetPedCombatAbility(ped, 2)
+        SetPedCombatRange(ped, 2)
+        SetPedCombatAttributes(ped, 46, true)
 
         SetModelAsNoLongerNeeded(GetHashKey(model))
     end
