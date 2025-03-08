@@ -41,7 +41,7 @@ function SpawnGangMembers(gangName)
 
     local gangData = Config.Gangs[gangName]
 
-    for _, spawnPoint in pairs({gangData.territory}) do
+    for _, spawnPoint in ipairs(gangData.territory) do
         local model = gangData.models[math.random(#gangData.models)]
         local vehicle = gangData.vehicles[math.random(#gangData.vehicles)]
 
@@ -119,6 +119,23 @@ end)
 
 RegisterNetEvent("gangwars:spawnGangMembers")
 AddEventHandler("gangwars:spawnGangMembers", function(gangData)
-    local src = source
-    TriggerClientEvent("gangwars:spawnGangMembers", src, gangData)
+    for _, spawnPoint in ipairs(gangData.territory) do
+        local model = gangData.models[math.random(#gangData.models)]
+
+        RequestModel(GetHashKey(model))
+        while not HasModelLoaded(GetHashKey(model)) do
+            Citizen.Wait(100)
+        end
+
+        local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
+
+        GiveWeaponToPed(ped, GetHashKey("WEAPON_PISTOL"), 100, false, true)
+        SetPedCombatAttributes(ped, 46, true) -- Always fight
+        SetPedCombatAttributes(ped, 5, true)  -- Can flee when low health
+        SetPedAsEnemy(ped, true)
+        SetPedRelationshipGroupHash(ped, GetHashKey("GANG_GROUP"))
+        TaskCombatPed(ped, PlayerPedId(), 0, 16) -- Attack players
+
+        SetModelAsNoLongerNeeded(GetHashKey(model))
+    end
 end)
