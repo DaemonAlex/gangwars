@@ -74,4 +74,29 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
         SetPedAsEnemy(ped, true)
         SetPedRelationshipGroupHash(ped, GetHashKey("GANG_GROUP"))
 
-        -- Improved NPC Combat Beha
+        -- Improved NPC Combat Behavior
+        TaskCombatPed(ped, PlayerPedId(), 0, 16)
+        SetPedCombatMovement(ped, 3)  -- NPCs will chase players
+        SetPedCombatAbility(ped, 2)  -- NPCs will shoot accurately
+        SetPedCombatRange(ped, 2)  -- NPCs will attack from a distance
+        SetPedCombatAttributes(ped, 46, true)  -- NPCs will never flee
+        SetPedCombatAttributes(ped, 0, true)  -- NPCs will use cover
+        TaskCombatHatedTargetsAroundPed(ped, 100.0, 0)
+
+        SetModelAsNoLongerNeeded(GetHashKey(model))
+    end
+end)
+
+RegisterCommand('joingang', function(source, args)
+    local gang = args[1]
+    if not gang then
+        lib.notify({
+            title = 'Error',
+            description = 'You must specify a gang name.',
+            type = 'error',
+            duration = 5000
+        })
+        return
+    end
+    TriggerServerEvent('gangWars:playerJoinedGang', gang)
+end, false)
