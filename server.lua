@@ -1,4 +1,3 @@
-local lib = exports.ox_lib
 local QBCore = exports['qb-core']:GetCoreObject()
 
 -- Ensure we're using the same Config structure as client.lua
@@ -22,12 +21,31 @@ Citizen.CreateThread(function()
     end
 end)
 
+-- Safe notification function for server-side
+local function SafeNotifyPlayer(playerId, data)
+    if not playerId then return end
+    
+    -- Use basic chat notification as fallback if ox_lib fails
+    local success, error = pcall(function()
+        TriggerClientEvent('ox_lib:notify', playerId, data)
+    end)
+    
+    if not success then
+        print("^1WARNING:^0 Failed to send notification to player " .. playerId .. ": " .. tostring(error))
+        TriggerClientEvent('chat:addMessage', playerId, {
+            color = {255, 0, 0},
+            multiline = true,
+            args = {data.title, data.description}
+        })
+    end
+end
+
 -- Handle a player joining a gang
 RegisterNetEvent('gangWars:playerJoinedGang')
 AddEventHandler('gangWars:playerJoinedGang', function(gangName)
     local src = source
     if not gangName or not Config.Gangs[gangName] then
-        TriggerClientEvent('ox_lib:notify', src, {
+        SafeNotifyPlayer(src, {
             title = 'Error',
             description = 'Invalid gang name',
             type = 'error',
@@ -44,7 +62,7 @@ AddEventHandler('gangWars:playerJoinedGang', function(gangName)
     -- Here you could add code to set player's gang information in your framework
     -- For example, updating their metadata or gang status
     
-    TriggerClientEvent('ox_lib:notify', src, {
+    SafeNotifyPlayer(src, {
         title = 'Gang Joined',
         description = 'You are now a member of ' .. gangName,
         type = 'success',
@@ -175,6 +193,37 @@ AddEventHandler('gangWars:playerAttackedGang', function(gangName)
     TriggerEvent('gangWars:triggerGangWar', gangName)
 end)
 
+-- Add new command for direct local spawning
+RegisterCommand('forcespawn', function(source, args, rawCommand)
+    local src = source
+    local gangName = args[1]
+    
+    if not gangName or not Config.Gangs[gangName] then
+        local gangs = {}
+        for gang, _ in pairs(Config.Gangs) do
+            table.insert(gangs, gang)
+        end
+        
+        SafeNotifyPlayer(src, {
+            title = 'Error',
+            description = 'Invalid gang. Available: ' .. table.concat(gangs, ', '),
+            type = 'error',
+            duration = 5000
+        })
+        return
+    end
+    
+    print("^3INFO:^0 Player " .. src .. " requested direct spawn of " .. gangName)
+    TriggerClientEvent('gangwars:spawnGangMembers', src, Config.Gangs[gangName])
+    
+    SafeNotifyPlayer(src, {
+        title = 'Gang Spawned',
+        description = 'Spawned ' .. gangName .. ' gang members at your location',
+        type = 'success',
+        duration = 5000
+    })
+end, false)
+
 -- Add debug command for testing
 RegisterCommand('testwar', function(source, args, rawCommand)
     local src = source
@@ -191,17 +240,59 @@ RegisterCommand('testwar', function(source, args, rawCommand)
             for gang, _ in pairs(Config.Gangs) do
                 table.insert(gangs, gang)
             end
-            TriggerClientEvent('ox_lib:notify', src, {
+            SafeNotifyPlayer(src, {
                 title = 'Error',
                 description = 'Invalid gang. Available: ' .. table.concat(gangs, ', '),
-                type = 'error'
+                type = 'error',
+                duration = 5000
             })
         end
     else
-        TriggerClientEvent('ox_lib:notify', src, {
+        SafeNotifyPlayer(src, {
             title = 'Error',
             description = 'You do not have permission to use this command',
-            type = 'error'
+            type = 'error',
+            duration = 5000
         })
     end
 end, true) -- restricted command
+
+-- Add command to easily see and teleport to gang territories
+RegisterCommand('teleport', function(source, args, rawCommand)
+    local src = source
+    local gangName = args[1]
+    
+    if not gangName or not Config.Gangs[gangName] then
+        local gangs = {}
+        for gang, _ in pairs(Config.Gangs) do
+            table.insert(gangs, gang)
+        end
+        
+        SafeNotifyPlayer(src, {
+            title = 'Error',
+            description = 'Invalid gang. Available: ' .. table.concat(gangs, ', '),
+            type = 'error',
+            duration = 5000
+        })
+        return
+    end
+    
+    if Config.Gangs[gangName].territory and #Config.Gangs[gangName].territory > 0 then
+        local pos = Config.Gangs[gangName].territory[1]
+        TriggerClientEvent('QBCore:Command:TeleportToCoords', src, pos.x, pos.y, pos.z)
+        
+        SafeNotifyPlayer(src, {
+            title = 'Teleported',
+            description = 'You\'ve been teleported to ' .. gangName .. ' territory',
+            type = 'success',
+            duration = 5000
+        })
+    else
+        SafeNotifyPlayer(src, {
+            title = 'Error',
+            description = 'No territory coordinates found for ' .. gangName,
+            type = 'error',
+            duration = 5000
+        })
+    end
+end, false)
