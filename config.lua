@@ -61,3 +61,11 @@ Config.GangSpawnSettings = {
     maxPeds = 5,
     armed = true -- If false, gang NPCs spawn unarmed
 }
+
+-- Additional settings
+Config.WarSettings = {
+    proximityThreshold = 1000.0, -- Distance between territories to trigger wars
+    randomWarInterval = 14400000, -- Time between random wars (4 hours)
+    proximityWarInterval = 300000, -- Time between proximity war checks (5 minutes)
+    warCooldown = 600000 -- Cooldown period after a war (10 minutes)
+}
