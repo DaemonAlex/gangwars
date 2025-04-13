@@ -39,75 +39,169 @@ A FiveM resource that brings a new level of realism and excitement to your serve
 
 ### Configuring Gang Territories
 
-Each gang's territory is defined by coordinates in the config.lua file. To change the location of a gang's territory, adjust the x, y, and z values for that gang. For example:
-```lua
-['Ballas'] = {
-    territory = {x = 114.3, y = -1961.1, z = 21.3},
-    ...
-}
-```
+# Gang Wars Implementation Guide
 
-### Adding or Removing Vehicles
+This document provides a comprehensive overview of the improvements made to the Gang Wars script and how to effectively implement it on your FiveM server.
 
-The vehicles used by each gang are also configurable. Adjust the vehicle model list to change what vehicles gang members can drive:
-```lua
-['Ballas'] = {
-    vehicles = {'buccaneer', 'peyote', 'voodoo', 'daemon', 'hexer'}
-    ...
-}
-```
-5.	**Restart your server or use the refresh and start gang_wars commands in your server console to begin using the resource.
+## Key Improvements
 
-Configuration
+### 1. Enhanced Gang Territories
+- **Visual Indicators**: Gang territories now have visible markers, blips, and props to make them easily identifiable
+- **Territory Recognition**: Players are now notified when entering/exiting gang territories
+- **Custom Colors**: Each gang has distinctive colors for their territory markers
 
-All gang territories, NPC models, and vehicles can be modified inside config.lua.
+### 2. Smarter Gang Members
+- **Improved Targeting**: Gang members now only attack rival gangs and players who attack them
+- **Gang Affiliation**: Members recognize players in their own gang and won't attack them
+- **Configurable Behavior**: Each gang has unique weapons, clothing, and idle animations
+- **Resource Management**: Optimized spawning and cleanup to minimize server impact
 
-Example gang configuration:
-### Saving Changes
+### 3. Gang Membership System
+- **Player Affiliation**: Players can join and leave gangs with proper tracking
+- **War Escalation**: Player actions can trigger gang wars with appropriate notifications
+- **Gang Recognition**: Gang members recognize friendly players
 
-After making changes in config.lua, save the file and restart your FiveM server for the changes to take effect.
-```lua
-Config.Gangs = {
-    ['Ballas'] = {
-        territory = {x = 114.3, y = -1961.1, z = 21.3},
-        models = {'g_m_y_ballaorig_01', 'g_m_y_ballasout_01', 'g_m_y_ballaeast_01', 'csb_ballasog'},
-        vehicles = {'buccaneer', 'peyote', 'voodoo'}
-    },
-    ['Vagos'] = {
-        territory = {x = 325.2, y = -2050.4, z = 20.9},
-        models = {'g_m_y_mexgoon_01', 'g_m_y_mexgoon_02', 'g_m_y_mexgoon_03', 'csb_ortega'},
-        vehicles = {'tornado3', 'chino', 'buccaneer2'}
-    },
-    ['Families'] = {
-        territory = {x = -154.6, y = -1608.4, z = 34.8},
-        models = {'g_f_y_families_01', 'g_m_y_famdnf_01', 'g_m_y_famfor_01', 'csb_ramp_gang'},
-        vehicles = {'greenwood', 'manana', 'tornado'}
-    },
-    ['Triads'] = {
-        territory = {x = -820.4, y = -700.3, z = 27.9},
-        models = {'g_m_m_chigoon_01', 'g_m_m_chigoon_02', 'g_m_y_korean_01', 'g_m_y_korean_02'},
-        vehicles = {'tailgater', 'sultan', 'schafter2'}
-    },
-    ['Madrazo'] = {
-        territory = {x = 1391.5, y = 1152.2, z = 114.3},
-        models = {'g_m_m_armboss_01', 'g_m_m_armlieut_01', 'g_m_m_armgoon_01', 'csb_mweather'},
-        vehicles = {'xls', 'granger', 'mesa'}
-    }
-}
+### 4. Reputation System
+- **Gang Progression**: Players can build reputation within their gang
+- **Benefits & Rewards**: Higher reputation unlocks better gear and abilities
+- **Action-based Reputation**: Gain or lose reputation based on your actions
 
-```
-## Coming Soon
+## Setup Instructions
 
-- More gang models and behaviors: Adding diversity and depth to the gang types available.
-- Improved AI and pathfinding: Enhancements to how NPCs navigate and interact with the environment.
-- Enhanced player interaction and influence: New ways for players to engage with and influence the gang ecosystem.
+### Configuration Setup
 
-## Support
+1. **Gang Territories**:
+   - Each gang has territory points defined in the config
+   - Add more points to expand a gang's territory
+   - Adjust the `TerritoryRadius` to control the size of territories
 
-For support, feature requests, or bug reports, please submit an issue on the GitHub repository or contact us through our community support channels.
+2. **Gang Appearance**:
+   - Configure clothing for consistent gang member appearance
+   - Set colors for map indicators
+   - Add props to make territories visually distinct
 
-We welcome contributions from the community. If you would like to contribute to the development of this resource, please make a pull request.
+3. **Behavior Settings**:
+   - Configure weapons and combat behavior
+   - Set idle animations and scenarios for ambient gang members
+   - Adjust war triggers and cooldowns
 
-## License
+### Commands
 
-Distributed under the MIT License. See LICENSE file for more information.
+The script includes several useful commands:
+
+| Command | Description | Usage |
+|---------|-------------|-------|
+| `/joingang [gang]` | Join a specific gang | `/joingang Ballas` |
+| `/leavegang` | Leave your current gang | `/leavegang` |
+| `/checkgangs` | List available gangs and your status | `/checkgangs` |
+| `/spawngang [gang]` | Spawn gang members near you (testing) | `/spawngang Vagos` |
+| `/forcespawn [gang]` | Force spawn gang members (admin) | `/forcespawn Triads` |
+| `/testwar [gang]` | Trigger a gang war (admin) | `/testwar Families` |
+| `/teleport [gang]` | Teleport to a gang territory | `/teleport Madrazo` |
+
+### Gang Wars Mechanics
+
+1. **Automatic Wars**:
+   - Wars trigger randomly at configured intervals
+   - Proximity between rival gang members can trigger wars
+   - Player attacks on gang members can escalate to wars
+
+2. **War Behavior**:
+   - Gang members become more aggressive during wars
+   - Notifications alert players to ongoing conflicts
+   - Gang-affiliated players receive special alerts
+
+3. **Ambient Gang Presence**:
+   - Gang members spawn in their territories
+   - They engage in configured scenarios/animations
+   - Territory props create visual ambience
+
+## Performance Optimization
+
+To ensure your server runs smoothly with this script:
+
+1. **Entity Management**:
+   - Gang members are automatically cleaned up after a configurable time
+   - Optimize the `despawnTime` in config for your server population
+
+2. **Spawn Density**:
+   - Adjust `minPeds` and `maxPeds` to control gang density
+   - Lower these values on high-population servers
+
+3. **Check Frequency**:
+   - The script has optimized check frequencies
+   - War triggers have appropriate cooldowns to prevent spam
+
+4. **Visual Indicators**:
+   - Map blips are configured efficiently
+   - Territory markers only render when players are nearby
+
+## Tips for Roleplay Servers
+
+For roleplay-focused servers:
+
+1. **Territory Control**:
+   - Gang territories can become central to roleplay scenarios
+   - Consider implementing territory capture mechanics
+
+2. **Gang Hierarchy**:
+   - Use the reputation system to create gang hierarchies
+   - Higher-reputation members can lead operations
+
+3. **Police Interaction**:
+   - The script notifies police jobs about gang activity
+   - This creates natural law enforcement interaction opportunities
+
+4. **Economy Integration**:
+   - Consider adding drug sales or other activities in territories
+   - Tie gang membership to illegal business opportunities
+
+## Troubleshooting
+
+Common issues and solutions:
+
+1. **Gang Members Not Spawning**:
+   - Check territory coordinates are correctly set
+   - Ensure models are valid and exist in your game files
+
+2. **Gang Members Attack Own Gang**:
+   - Verify relationship group setup is working
+   - Check player's gang metadata is saving correctly
+
+3. **Territory Markers Not Appearing**:
+   - Check color configuration is valid
+   - Ensure blip IDs are correct for your game version
+
+4. **High Resource Usage**:
+   - Lower spawn counts and check frequencies
+   - Reduce the number of visual indicators
+
+## Future Expansion Ideas
+
+1. **Territory Capture System**
+   - Allow gangs to fight for and claim new territories
+   - Dynamic territory boundaries based on gang activity
+
+2. **Gang Businesses**
+   - Add specific business opportunities in territories
+   - Gang-controlled shops or services
+
+3. **Reputation Rewards**
+   - Expand the reputation system with unique rewards
+   - Special vehicles, weapons, or abilities
+
+4. **Dynamic Events**
+   - Random events in territories like drug shipments
+   - Police raids on gang territories
+
+---
+
+## Implementation Checklist
+
+- [ ] Install updated script files
+- [ ] Configure gang territories and appearance
+- [ ] Adjust spawn settings for your server population
+- [ ] Test gang behavior with different player interactions
+- [ ] Set up appropriate commands for admins and players
+- [ ] Create server rules around gang gameplay
+- [ ] Monitor performance and adjust as needed
