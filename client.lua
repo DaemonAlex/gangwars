@@ -5,6 +5,7 @@ Config = Config or { Gangs = {}, PoliceJobs = {} }
 -- Debug logging
 print("^2DEBUG:^0 Client script loaded")
 
+-- Handle notification of gang activity
 RegisterNetEvent('gangWars:notifyGangActivity')
 AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
     if not gangTerritory then
@@ -37,6 +38,7 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
     end
 end)
 
+-- Handle gang fight effects
 RegisterNetEvent('gangWars:gangFightStarted')
 AddEventHandler('gangWars:gangFightStarted', function(coords)
     if not coords then
@@ -44,6 +46,7 @@ AddEventHandler('gangWars:gangFightStarted', function(coords)
         return
     end
     
+    -- Play gang war sounds
     PlaySoundFromCoord(-1, "GENERIC_SHOT_FIRED", coords.x, coords.y, coords.z, "DLC_HEISTS_GENERAL_FRONTEND_SOUNDS", true, 120, true)
     
     -- Start a particle effect at the coordinates
@@ -59,6 +62,7 @@ AddEventHandler('gangWars:gangFightStarted', function(coords)
     StopParticleFxLooped(effect, 0)
 end)
 
+-- Check if player is shooting at gang members
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(500)  
@@ -72,7 +76,7 @@ Citizen.CreateThread(function()
                 if not Config.Gangs then
                     print("^1ERROR:^0 Config.Gangs is nil or not loaded properly")
                     Citizen.Wait(5000) -- Wait longer before next check
-                    return
+                    goto continue
                 end
 
                 for gangName, gangData in pairs(Config.Gangs) do
@@ -89,10 +93,12 @@ Citizen.CreateThread(function()
                 end
             end
         end
+        
+        ::continue::
     end
 end)
 
--- Fixed event handler for spawning gang members
+-- FIXED: Spawn gang members event handler (removed duplicate event)
 RegisterNetEvent("gangwars:spawnGangMembers")
 AddEventHandler("gangwars:spawnGangMembers", function(gangData)
     if not gangData or not gangData.territory or not gangData.models then
@@ -106,6 +112,11 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
     
     print("^3INFO:^0 Spawning " .. numPedsToSpawn .. " gang members")
     
+    -- Create a relationship group for these gang members
+    local relationshipGroup = "GANG_" .. math.random(9999)
+    AddRelationshipGroup(relationshipGroup)
+    SetRelationshipBetweenGroups(5, GetHashKey(relationshipGroup), GetHashKey("PLAYER"))
+    
     for i = 1, numPedsToSpawn do
         local spawnPoint = gangData.territory[math.random(#gangData.territory)]
         local model = gangData.models[math.random(#gangData.models)]
@@ -117,12 +128,16 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
 
         local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
 
-        -- Assign Weapons & Make NPCs Aggressive
-        GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
+        -- Assign Weapons if enabled
+        if Config.GangSpawnSettings.armed then
+            GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
+        end
+        
+        -- Make NPCs Aggressive
         SetPedCombatAttributes(ped, 46, true)  
         SetPedCombatAttributes(ped, 5, true)  
         SetPedAsEnemy(ped, true)
-        SetPedRelationshipGroupHash(ped, GetHashKey("GANG_GROUP"))
+        SetPedRelationshipGroupHash(ped, GetHashKey(relationshipGroup))
 
         -- Improved NPC Combat Behavior
         Citizen.Wait(math.random(1000, 3000))  
@@ -132,7 +147,11 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
         SetPedCombatRange(ped, 2)  
         SetPedCombatAttributes(ped, 46, true)  
         SetPedCombatAttributes(ped, 0, true)  
-        SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)  
+        
+        if Config.GangSpawnSettings.armed then
+            SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)  
+        end
+        
         SetPedAccuracy(ped, 60)  
         SetPedSeeingRange(ped, 100.0)  
         SetPedHearingRange(ped, 80.0)  
@@ -150,12 +169,14 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
     end
 end)
 
+-- FIXED: Join gang command (removed duplicate command)
 RegisterCommand('joingang', function(source, args)
     local gang = args[1]
     if not gang or not Config.Gangs[gang] then
+        local availableGangs = getGangNames()
         lib.notify({
             title = 'Error',
-            description = 'Invalid gang name. Available: ' .. table.concat(getGangNames(), ', '),
+            description = 'Invalid gang name. Available: ' .. table.concat(availableGangs, ', '),
             type = 'error',
             duration = 5000
         })
@@ -167,11 +188,34 @@ end, false)
 -- Helper function to get all gang names
 function getGangNames()
     local names = {}
-    for name, _ in pairs(Config.Gangs) do
+    for name, _ in pairs(Config.Gangs or {}) do
         table.insert(names, name)
     end
     return names
 end
+
+-- Add debug command to check gang information
+RegisterCommand('checkgangs', function()
+    if Config and Config.Gangs then
+        local message = "Loaded Gangs: "
+        local gangs = getGangNames()
+        message = message .. table.concat(gangs, ", ")
+        
+        lib.notify({
+            title = 'Gang Info',
+            description = message,
+            type = 'info',
+            duration = 5000
+        })
+    else
+        lib.notify({
+            title = 'Error',
+            description = 'Config.Gangs is not loaded properly',
+            type = 'error',
+            duration = 5000
+        })
+    end
+end, false)
 
 -- Add this initialization code for testing
 Citizen.CreateThread(function()
@@ -191,55 +235,3 @@ Citizen.CreateThread(function()
         print("^1ERROR:^0 Config.Gangs not loaded properly")
     end
 end)
-
-RegisterNetEvent("gangwars:spawnGangMembers")
-AddEventHandler("gangwars:spawnGangMembers", function(gangData)
-    for _, spawnPoint in ipairs(gangData.territory) do
-        local model = gangData.models[math.random(#gangData.models)]
-
-        RequestModel(GetHashKey(model))
-        while not HasModelLoaded(GetHashKey(model)) do
-            Citizen.Wait(100)
-        end
-
-        local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
-
-        -- Assign Weapons & Make NPCs Aggressive
-        GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
-        SetPedCombatAttributes(ped, 46, true)  
-        SetPedCombatAttributes(ped, 5, true)  
-        SetPedAsEnemy(ped, true)
-        SetPedRelationshipGroupHash(ped, GetHashKey("GANG_GROUP"))
-
-        -- Improved NPC Combat Behavior
-        Citizen.Wait(math.random(1000, 3000))  
-        TaskCombatHatedTargetsAroundPed(ped, 150.0, 0)  
-        SetPedCombatMovement(ped, 3)  
-        SetPedCombatAbility(ped, 2)  
-        SetPedCombatRange(ped, 2)  
-        SetPedCombatAttributes(ped, 46, true)  
-        SetPedCombatAttributes(ped, 0, true)  
-        SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)  
-        SetPedAccuracy(ped, 60)  
-        SetPedSeeingRange(ped, 100.0)  
-        SetPedHearingRange(ped, 80.0)  
-        SetPedAlertness(ped, 3)  
-        TaskReloadWeapon(ped, true)  
-
-        SetModelAsNoLongerNeeded(GetHashKey(model))
-    end
-end)
-
-RegisterCommand('joingang', function(source, args)
-    local gang = args[1]
-    if not gang or not Config.Gangs[gang] then
-        lib.notify({
-            title = 'Error',
-            description = 'Invalid gang name. Available: Ballas, Vagos, Families.',
-            type = 'error',
-            duration = 5000
-        })
-        return
-    end
-    TriggerServerEvent('gangWars:playerJoinedGang', gang)
-end, false)
