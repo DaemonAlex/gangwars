@@ -1,9 +1,31 @@
-local lib = exports.ox_lib
 local QBCore = exports['qb-core']:GetCoreObject()
 Config = Config or { Gangs = {}, PoliceJobs = {} }
 
 -- Debug logging
 print("^2DEBUG:^0 Client script loaded")
+
+-- Safe notification function that handles different ox_lib versions
+local function SafeNotify(data)
+    -- Check if ox_lib is loaded
+    if not exports.ox_lib then
+        print("^1ERROR:^0 ox_lib is not loaded properly")
+        return
+    end
+    
+    -- Try to call notification in a safe manner
+    local success, error = pcall(function()
+        -- Newer versions of ox_lib use lib.notify(data)
+        exports.ox_lib:notify(data)
+    end)
+    
+    if not success then
+        print("^1WARNING:^0 Failed to show notification: " .. tostring(error))
+        -- Fallback to basic notification
+        BeginTextCommandThefeedPost("STRING")
+        AddTextComponentSubstringPlayerName(data.title .. ": " .. data.description)
+        EndTextCommandThefeedPostTicker(true, true)
+    end
+end
 
 -- Handle notification of gang activity
 RegisterNetEvent('gangWars:notifyGangActivity')
@@ -20,7 +42,7 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritoryPo
                       vector3(gangTerritoryPoint.x, gangTerritoryPoint.y, gangTerritoryPoint.z))
     
     if distance < (Config.NotificationDistance or 500.0) then
-        lib.notify({
+        SafeNotify({
             title = 'Gang Activity',
             description = message,
             type = 'error',
@@ -30,7 +52,7 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritoryPo
 
     local playerData = QBCore.Functions.GetPlayerData()
     if playerData and playerData.job and Config.PoliceJobs and Config.PoliceJobs[playerData.job.name] then
-        lib.notify({
+        SafeNotify({
             title = 'Police Alert',
             description = 'Gunshots reported in a gang territory!',
             type = 'warning',
@@ -98,6 +120,22 @@ Citizen.CreateThread(function()
         ::continue::
     end
 end)
+
+-- Debug function to directly spawn gang members for a specific gang
+function SpawnGangMembersForTesting(gangName)
+    if not gangName or not Config.Gangs[gangName] then
+        print("^1ERROR:^0 Invalid gang name for testing: " .. tostring(gangName))
+        return
+    end
+    
+    local gangData = Config.Gangs[gangName]
+    
+    -- Directly call the spawn function
+    print("^3INFO:^0 Manually spawning gang members for " .. gangName)
+    
+    -- Send event to self to spawn members
+    TriggerEvent('gangwars:spawnGangMembers', gangData)
+end
 
 -- Spawn gang members event handler
 RegisterNetEvent("gangwars:spawnGangMembers")
@@ -181,7 +219,7 @@ RegisterCommand('joingang', function(source, args)
     local gang = args[1]
     if not gang or not Config.Gangs[gang] then
         local availableGangs = getGangNames()
-        lib.notify({
+        SafeNotify({
             title = 'Error',
             description = 'Invalid gang name. Available: ' .. table.concat(availableGangs, ', '),
             type = 'error',
@@ -208,20 +246,29 @@ RegisterCommand('checkgangs', function()
         local gangs = getGangNames()
         message = message .. table.concat(gangs, ", ")
         
-        lib.notify({
+        SafeNotify({
             title = 'Gang Info',
             description = message,
             type = 'info',
             duration = 5000
         })
     else
-        lib.notify({
+        SafeNotify({
             title = 'Error',
             description = 'Config.Gangs is not loaded properly',
             type = 'error',
             duration = 5000
         })
     end
+end, false)
+
+-- Add direct spawn testing command
+RegisterCommand('spawngang', function(source, args)
+    local gangName = args[1]
+    if not gangName then
+        gangName = 'Ballas' -- Default if no gang specified
+    end
+    SpawnGangMembersForTesting(gangName)
 end, false)
 
 -- Add this initialization code for testing
