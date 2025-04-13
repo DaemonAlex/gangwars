@@ -26,18 +26,16 @@ local function SafeNotifyPlayer(playerId, data)
     if not playerId then return end
     
     -- Use basic chat notification as fallback if ox_lib fails
-    local success, error = pcall(function()
+    TriggerClientEvent('chat:addMessage', playerId, {
+        color = {255, 0, 0},
+        multiline = true,
+        args = {data.title, data.description}
+    })
+    
+    -- Try ox_lib notify if available (will silently fail if not)
+    pcall(function()
         TriggerClientEvent('ox_lib:notify', playerId, data)
     end)
-    
-    if not success then
-        print("^1WARNING:^0 Failed to send notification to player " .. playerId .. ": " .. tostring(error))
-        TriggerClientEvent('chat:addMessage', playerId, {
-            color = {255, 0, 0},
-            multiline = true,
-            args = {data.title, data.description}
-        })
-    end
 end
 
 -- Handle a player joining a gang
@@ -59,8 +57,9 @@ AddEventHandler('gangWars:playerJoinedGang', function(gangName)
     
     print("^3INFO:^0 Player " .. src .. " joined gang: " .. gangName)
     
-    -- Here you could add code to set player's gang information in your framework
-    -- For example, updating their metadata or gang status
+    -- Update player's metadata to include gang affiliation
+    -- This uses QBCore's metadata system to track gang membership
+    Player.Functions.SetMetaData('gang', gangName)
     
     SafeNotifyPlayer(src, {
         title = 'Gang Joined',
@@ -68,6 +67,11 @@ AddEventHandler('gangWars:playerJoinedGang', function(gangName)
         type = 'success',
         duration = 5000
     })
+    
+    -- Broadcast to nearby players
+    TriggerClientEvent('gangWars:notifyGangActivity', -1, 
+        'A new member has joined ' .. gangName .. '!', 
+        Config.Gangs[gangName].territory[1])
 end)
 
 -- Trigger a gang war event
@@ -90,7 +94,31 @@ AddEventHandler('gangWars:triggerGangWar', function(gangName)
     else
         print("^1ERROR:^0 No territory data for gang: " .. gangName)
     end
+    
+    -- Record this war time
+    lastWarTime[gangName] = GetGameTimer()
 end)
+
+-- Function to get players in a specific territory
+function GetPlayersInTerritory(territory, radius)
+    local playersInArea = {}
+    local players = GetPlayers()
+    
+    for _, playerId in ipairs(players) do
+        local ped = GetPlayerPed(playerId)
+        local coords = GetEntityCoords(ped)
+        
+        -- Check if player is within radius of territory point
+        local distance = #(vector3(coords.x, coords.y, coords.z) - 
+                         vector3(territory.x, territory.y, territory.z))
+        
+        if distance <= (radius or 200.0) then
+            table.insert(playersInArea, playerId)
+        end
+    end
+    
+    return playersInArea
+end
 
 -- Check for proximity wars between gangs
 Citizen.CreateThread(function()
@@ -190,6 +218,27 @@ AddEventHandler('gangWars:playerAttackedGang', function(gangName)
     end
 
     print("^1ALERT:^0 Player " .. src .. " attack detected on " .. gangName .. "! Retaliation initiated.")
+    
+    -- Get player's gang affiliation
+    local Player = QBCore.Functions.GetPlayer(src)
+    local playerGang = nil
+    
+    if Player then
+        playerGang = Player.PlayerData.metadata and Player.PlayerData.metadata.gang
+    end
+    
+    -- If player is in a rival gang, this could escalate to a full gang war
+    if playerGang and playerGang ~= gangName and Config.Gangs[playerGang] then
+        -- 50% chance of a full gang war
+        if math.random() < 0.5 then
+            print("^1ALERT:^0 Gang war escalation between " .. gangName .. " and " .. playerGang)
+            TriggerEvent('gangWars:triggerGangWar', gangName)
+            TriggerEvent('gangWars:triggerGangWar', playerGang)
+            return
+        end
+    end
+    
+    -- Otherwise just trigger retaliation from attacked gang
     TriggerEvent('gangWars:triggerGangWar', gangName)
 end)
 
@@ -229,8 +278,8 @@ RegisterCommand('testwar', function(source, args, rawCommand)
     local src = source
     local player = QBCore.Functions.GetPlayer(src)
     
-    -- Check if player is admin
-    if player and player.PlayerData.permission == "admin" then
+    -- Check if player is admin (can be customized for your server)
+    if player and (player.PlayerData.permission == "admin" or player.PlayerData.permission == "god") then
         local gangName = args[1]
         if gangName and Config.Gangs[gangName] then
             print("^3INFO:^0 Admin " .. src .. " triggered test war for " .. gangName)
@@ -296,3 +345,36 @@ RegisterCommand('teleport', function(source, args, rawCommand)
         })
     end
 end, false)
+
+-- Register server event for ambient gang population near players
+RegisterNetEvent('gangWars:requestAmbientGangs')
+AddEventHandler('gangWars:requestAmbientGangs', function(playerLocation)
+    local src = source
+    
+    -- Find closest gang territory
+    local closestGang = nil
+    local closestDist = 99999.0
+    
+    for gangName, gangData in pairs(Config.Gangs) do
+        if gangData.territory and #gangData.territory > 0 then
+            for _, territoryPoint in ipairs(gangData.territory) do
+                local dist = #(vector3(playerLocation.x, playerLocation.y, playerLocation.z) - 
+                              vector3(territoryPoint.x, territoryPoint.y, territoryPoint.z))
+                
+                if dist < closestDist then
+                    closestDist = dist
+                    closestGang = gangName
+                end
+            end
+        end
+    end
+    
+    -- If player is near a territory, trigger gang spawning
+    if closestGang and closestDist < 200.0 then
+        print("^3INFO:^0 Ambient gang population for " .. closestGang .. " near player " .. src)
+        TriggerClientEvent('gangwars:spawnGangMembers', src, Config.Gangs[closestGang])
+    end
+end)
+
+-- Initialization
+print("^2INFO:^0 Gang Wars server script initialized")
