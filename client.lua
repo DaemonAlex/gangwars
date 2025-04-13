@@ -7,8 +7,8 @@ print("^2DEBUG:^0 Client script loaded")
 
 -- Handle notification of gang activity
 RegisterNetEvent('gangWars:notifyGangActivity')
-AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
-    if not gangTerritory then
+AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritoryPoint)
+    if not gangTerritoryPoint then
         print("^1ERROR:^0 No territory data provided for notification")
         return
     end
@@ -16,7 +16,8 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritory)
     local playerPed = PlayerPedId()
     local playerCoords = GetEntityCoords(playerPed)
 
-    local distance = #(vector3(playerCoords.x, playerCoords.y, playerCoords.z) - vector3(gangTerritory.x, gangTerritory.y, gangTerritory.z))
+    local distance = #(vector3(playerCoords.x, playerCoords.y, playerCoords.z) - 
+                      vector3(gangTerritoryPoint.x, gangTerritoryPoint.y, gangTerritoryPoint.z))
     
     if distance < (Config.NotificationDistance or 500.0) then
         lib.notify({
@@ -98,7 +99,7 @@ Citizen.CreateThread(function()
     end
 end)
 
--- FIXED: Spawn gang members event handler (removed duplicate event)
+-- Spawn gang members event handler
 RegisterNetEvent("gangwars:spawnGangMembers")
 AddEventHandler("gangwars:spawnGangMembers", function(gangData)
     if not gangData or not gangData.territory or not gangData.models then
@@ -118,6 +119,12 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
     SetRelationshipBetweenGroups(5, GetHashKey(relationshipGroup), GetHashKey("PLAYER"))
     
     for i = 1, numPedsToSpawn do
+        -- Make sure we have territory points to use
+        if #gangData.territory == 0 then
+            print("^1ERROR:^0 No territory points available for gang")
+            return
+        end
+        
         local spawnPoint = gangData.territory[math.random(#gangData.territory)]
         local model = gangData.models[math.random(#gangData.models)]
 
@@ -129,7 +136,7 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
         local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
 
         -- Assign Weapons if enabled
-        if Config.GangSpawnSettings.armed then
+        if Config.GangSpawnSettings and Config.GangSpawnSettings.armed then
             GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
         end
         
@@ -148,7 +155,7 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
         SetPedCombatAttributes(ped, 46, true)  
         SetPedCombatAttributes(ped, 0, true)  
         
-        if Config.GangSpawnSettings.armed then
+        if Config.GangSpawnSettings and Config.GangSpawnSettings.armed then
             SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)  
         end
         
@@ -169,7 +176,7 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
     end
 end)
 
--- FIXED: Join gang command (removed duplicate command)
+-- Join gang command
 RegisterCommand('joingang', function(source, args)
     local gang = args[1]
     if not gang or not Config.Gangs[gang] then
@@ -225,7 +232,7 @@ Citizen.CreateThread(function()
     
     if Config and Config.Gangs then
         for gang, data in pairs(Config.Gangs) do
-            if data.territory and data.territory[1] then
+            if data.territory and #data.territory > 0 then
                 print("^2DEBUG:^0 " .. gang .. ": " .. data.territory[1].x .. ", " .. data.territory[1].y .. ", " .. data.territory[1].z)
             else
                 print("^1ERROR:^0 No territory data for " .. gang)
