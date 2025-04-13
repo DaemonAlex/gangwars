@@ -86,19 +86,25 @@ Citizen.CreateThread(function()
             goto continue
         end
 
+        -- Check for proximity wars only if we have WarSettings configured
+        if not Config.WarSettings or not Config.WarSettings.proximityThreshold then
+            print("^1WARNING:^0 Config.WarSettings not properly configured, skipping proximity checks")
+            goto continue
+        end
+
         for gangName, gangData in pairs(Config.Gangs) do
             for rivalGang, rivalData in pairs(Config.Gangs) do
                 if gangName ~= rivalGang then
                     local currentTime = GetGameTimer()
                     if not lastWarTime[gangName] or currentTime - lastWarTime[gangName] > warCooldown then
-                        -- Make sure territory data exists
+                        -- Make sure territory data exists and has at least one point
                         if gangData.territory and rivalData.territory and 
-                           gangData.territory[1] and rivalData.territory[1] then
+                           #gangData.territory > 0 and #rivalData.territory > 0 then
                            
                             local distance = #(vector3(gangData.territory[1].x, gangData.territory[1].y, gangData.territory[1].z) - 
                                                vector3(rivalData.territory[1].x, rivalData.territory[1].y, rivalData.territory[1].z))
 
-                            if distance < 1000 then -- Increased distance for testing
+                            if distance < Config.WarSettings.proximityThreshold then 
                                 print("^3INFO:^0 Proximity gang war triggered between " .. gangName .. " and " .. rivalGang)
                                 TriggerEvent('gangWars:triggerGangWar', gangName)
                                 TriggerEvent('gangWars:triggerGangWar', rivalGang)
@@ -121,7 +127,9 @@ end)
 -- Schedule random gang wars
 Citizen.CreateThread(function()
     while true do
-        Citizen.Wait(14400000)  -- Every 4 hours
+        -- Use WarSettings if available, or default to 4 hours
+        local interval = (Config.WarSettings and Config.WarSettings.randomWarInterval) or 14400000
+        Citizen.Wait(interval)
 
         -- Get all available gangs from config
         local gangList = {}
