@@ -1,31 +1,9 @@
+local lib = exports.ox_lib
 local QBCore = exports['qb-core']:GetCoreObject()
 Config = Config or { Gangs = {}, PoliceJobs = {} }
 
 -- Debug logging
 print("^2DEBUG:^0 Client script loaded")
-
--- Safe notification function that handles different ox_lib versions
-local function SafeNotify(data)
-    -- Check if ox_lib is loaded
-    if not exports.ox_lib then
-        print("^1ERROR:^0 ox_lib is not loaded properly")
-        return
-    end
-    
-    -- Try to call notification in a safe manner
-    local success, error = pcall(function()
-        -- Newer versions of ox_lib use lib.notify(data)
-        exports.ox_lib:notify(data)
-    end)
-    
-    if not success then
-        print("^1WARNING:^0 Failed to show notification: " .. tostring(error))
-        -- Fallback to basic notification
-        BeginTextCommandThefeedPost("STRING")
-        AddTextComponentSubstringPlayerName(data.title .. ": " .. data.description)
-        EndTextCommandThefeedPostTicker(true, true)
-    end
-end
 
 -- Handle notification of gang activity
 RegisterNetEvent('gangWars:notifyGangActivity')
@@ -42,7 +20,7 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritoryPo
                       vector3(gangTerritoryPoint.x, gangTerritoryPoint.y, gangTerritoryPoint.z))
     
     if distance < (Config.NotificationDistance or 500.0) then
-        SafeNotify({
+        lib.notify({
             title = 'Gang Activity',
             description = message,
             type = 'error',
@@ -52,7 +30,7 @@ AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritoryPo
 
     local playerData = QBCore.Functions.GetPlayerData()
     if playerData and playerData.job and Config.PoliceJobs and Config.PoliceJobs[playerData.job.name] then
-        SafeNotify({
+        lib.notify({
             title = 'Police Alert',
             description = 'Gunshots reported in a gang territory!',
             type = 'warning',
@@ -121,22 +99,6 @@ Citizen.CreateThread(function()
     end
 end)
 
--- Debug function to directly spawn gang members for a specific gang
-function SpawnGangMembersForTesting(gangName)
-    if not gangName or not Config.Gangs[gangName] then
-        print("^1ERROR:^0 Invalid gang name for testing: " .. tostring(gangName))
-        return
-    end
-    
-    local gangData = Config.Gangs[gangName]
-    
-    -- Directly call the spawn function
-    print("^3INFO:^0 Manually spawning gang members for " .. gangName)
-    
-    -- Send event to self to spawn members
-    TriggerEvent('gangwars:spawnGangMembers', gangData)
-end
-
 -- Spawn gang members event handler
 RegisterNetEvent("gangwars:spawnGangMembers")
 AddEventHandler("gangwars:spawnGangMembers", function(gangData)
@@ -173,9 +135,24 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
 
         local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
 
-        -- Assign Weapons if enabled
-        if Config.GangSpawnSettings and Config.GangSpawnSettings.armed then
+        -- If the gang has specific clothing defined, apply it
+        if gangData.clothing then
+            for componentId, data in pairs(gangData.clothing) do
+                if type(componentId) == 'number' and type(data) == 'table' and data.drawable and data.texture then
+                    SetPedComponentVariation(ped, componentId, data.drawable, data.texture, 0)
+                end
+            end
+        end
+
+        -- Assign Weapons based on new config
+        if gangData.weapons and Config.GangSpawnSettings and Config.GangSpawnSettings.armed then
+            local weapon = gangData.weapons[math.random(#gangData.weapons)]
+            GiveWeaponToPed(ped, GetHashKey(weapon), 255, false, true)
+            SetCurrentPedWeapon(ped, GetHashKey(weapon), true)
+        elseif Config.GangSpawnSettings and Config.GangSpawnSettings.armed then
+            -- Fallback to default weapon if no specific ones defined
             GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
+            SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)
         end
         
         -- Make NPCs Aggressive
@@ -191,11 +168,7 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
         SetPedCombatAbility(ped, 2)  
         SetPedCombatRange(ped, 2)  
         SetPedCombatAttributes(ped, 46, true)  
-        SetPedCombatAttributes(ped, 0, true)  
-        
-        if Config.GangSpawnSettings and Config.GangSpawnSettings.armed then
-            SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)  
-        end
+        SetPedCombatAttributes(ped, 0, true)   
         
         SetPedAccuracy(ped, 60)  
         SetPedSeeingRange(ped, 100.0)  
@@ -203,14 +176,75 @@ AddEventHandler("gangwars:spawnGangMembers", function(gangData)
         SetPedAlertness(ped, 3)  
         TaskReloadWeapon(ped, true)  
 
+        -- Apply scenario if available
+        if Config.Ambience and Config.Ambience[gangName] and Config.Ambience[gangName].scenerios then
+            local scenarios = Config.Ambience[gangName].scenerios
+            if #scenarios > 0 then
+                local scenario = scenarios[math.random(#scenarios)]
+                TaskStartScenarioInPlace(ped, scenario, 0, true)
+            end
+        end
+
         SetModelAsNoLongerNeeded(GetHashKey(model))
         
-        -- Clean up ped after some time
-        Citizen.SetTimeout(120000, function() -- 2 minutes
+        -- Clean up ped after despawn time
+        local despawnTime = (Config.GangSpawnSettings and Config.GangSpawnSettings.despawnTime) or 120000
+        Citizen.SetTimeout(despawnTime, function()
             if DoesEntityExist(ped) then
                 DeleteEntity(ped)
             end
         end)
+    end
+end)
+
+-- Spawn territory props
+RegisterNetEvent("gangwars:spawnTerritoryProps")
+AddEventHandler("gangwars:spawnTerritoryProps", function(gangName, territory)
+    if not Config.TerritoryProps or not Config.TerritoryProps[gangName] or not territory then
+        return
+    end
+
+    local props = Config.TerritoryProps[gangName]
+    local radius = Config.TerritoryRadius or 100.0
+    
+    for _, prop in ipairs(props) do
+        -- Choose a random position within the territory radius
+        local angle = math.random() * 2 * math.pi
+        local distance = math.random() * radius
+        local basePoint = territory[math.random(#territory)]
+        
+        local x = basePoint.x + distance * math.cos(angle)
+        local y = basePoint.y + distance * math.sin(angle)
+        local z = basePoint.z
+        
+        -- Request model
+        local modelHash = GetHashKey(prop.model)
+        RequestModel(modelHash)
+        while not HasModelLoaded(modelHash) do
+            Citizen.Wait(100)
+        end
+        
+        -- Create object
+        local heading = 0.0
+        if prop.heading then
+            heading = math.random(0, 359) + 0.0
+        end
+        
+        local object = CreateObject(modelHash, x, y, z, false, false, true)
+        if object and DoesEntityExist(object) then
+            SetEntityHeading(object, heading)
+            PlaceObjectOnGroundProperly(object)
+            FreezeEntityPosition(object, true)
+            
+            -- Clean up after some time
+            Citizen.SetTimeout(600000, function() -- 10 minutes
+                if DoesEntityExist(object) then
+                    DeleteEntity(object)
+                end
+            end)
+        end
+        
+        SetModelAsNoLongerNeeded(modelHash)
     end
 end)
 
@@ -219,7 +253,7 @@ RegisterCommand('joingang', function(source, args)
     local gang = args[1]
     if not gang or not Config.Gangs[gang] then
         local availableGangs = getGangNames()
-        SafeNotify({
+        lib.notify({
             title = 'Error',
             description = 'Invalid gang name. Available: ' .. table.concat(availableGangs, ', '),
             type = 'error',
@@ -246,29 +280,20 @@ RegisterCommand('checkgangs', function()
         local gangs = getGangNames()
         message = message .. table.concat(gangs, ", ")
         
-        SafeNotify({
+        lib.notify({
             title = 'Gang Info',
             description = message,
             type = 'info',
             duration = 5000
         })
     else
-        SafeNotify({
+        lib.notify({
             title = 'Error',
             description = 'Config.Gangs is not loaded properly',
             type = 'error',
             duration = 5000
         })
     end
-end, false)
-
--- Add direct spawn testing command
-RegisterCommand('spawngang', function(source, args)
-    local gangName = args[1]
-    if not gangName then
-        gangName = 'Ballas' -- Default if no gang specified
-    end
-    SpawnGangMembersForTesting(gangName)
 end, false)
 
 -- Add this initialization code for testing
@@ -289,3 +314,35 @@ Citizen.CreateThread(function()
         print("^1ERROR:^0 Config.Gangs not loaded properly")
     end
 end)
+
+-- Add ambient gang spawning if enabled
+if Config.EnableAmbientGangs then
+    Citizen.CreateThread(function()
+        while true do
+            Citizen.Wait(30000) -- Check every 30 seconds
+            
+            local playerPed = PlayerPedId()
+            local playerCoords = GetEntityCoords(playerPed)
+            
+            for gangName, gangData in pairs(Config.Gangs or {}) do
+                if gangData.territory and #gangData.territory > 0 then
+                    -- Check if player is within territory radius
+                    for _, point in ipairs(gangData.territory) do
+                        local distance = #(vector3(playerCoords.x, playerCoords.y, playerCoords.z) - 
+                                          vector3(point.x, point.y, point.z))
+                        
+                        if distance < (Config.TerritoryRadius or 100.0) then
+                            -- Randomly decide if we spawn gang members (30% chance)
+                            if math.random() < 0.3 then
+                                TriggerEvent('gangwars:spawnGangMembers', gangData)
+                                -- Also spawn props in territory
+                                TriggerEvent('gangwars:spawnTerritoryProps', gangName, gangData.territory)
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
