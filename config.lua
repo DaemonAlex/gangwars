@@ -148,6 +148,50 @@ Config.Ambience = {
             dict = 'amb@world_human_guard_stand@male@base',
             anim = 'base'
         }
+    },
+    ['Triads'] = {
+        scenerios = {
+            'WORLD_HUMAN_STAND_MOBILE', 
+            'WORLD_HUMAN_SMOKING', 
+            'WORLD_HUMAN_CLIPBOARD'
+        },
+        idleAnimation = {
+            dict = 'amb@world_human_stand_guard@male@base',
+            anim = 'base'
+        }
+    },
+    ['Madrazo'] = {
+        scenerios = {
+            'WORLD_HUMAN_GUARD_STAND', 
+            'WORLD_HUMAN_SMOKING', 
+            'WORLD_HUMAN_DRINKING'
+        },
+        idleAnimation = {
+            dict = 'amb@world_human_stand_guard@male@base',
+            anim = 'base'
+        }
+    },
+    ['Vagos'] = {
+        scenerios = {
+            'WORLD_HUMAN_DRINKING', 
+            'WORLD_HUMAN_SMOKING', 
+            'WORLD_HUMAN_LEANING'
+        },
+        idleAnimation = {
+            dict = 'amb@world_human_hang_out_street@male_c@base',
+            anim = 'base'
+        }
+    },
+    ['Families'] = {
+        scenerios = {
+            'WORLD_HUMAN_STAND_IMPATIENT', 
+            'WORLD_HUMAN_SMOKING_POT', 
+            'WORLD_HUMAN_DRINKING'
+        },
+        idleAnimation = {
+            dict = 'amb@world_human_stand_guard@male@base',
+            anim = 'base'
+        }
     }
 }
 
@@ -208,48 +252,4 @@ Config.RepSystem = {
         [300] = "Trusted gang member - special weapons and abilities",
         [500] = "Lieutenant - command abilities and best gear"
     }
-}@world_human_stand_guard@male@base',
-            anim = 'base'
-        }
-    },
-    ['Triads'] = {
-        scenerios = {
-            'WORLD_HUMAN_STAND_MOBILE', 
-            'WORLD_HUMAN_SMOKING', 
-            'WORLD_HUMAN_CLIPBOARD'
-        },
-        idleAnimation = {
-            dict = 'amb@world_human_stand_guard@male@base',
-            anim = 'base'
-        }
-    },
-    ['Madrazo'] = {
-        scenerios = {
-            'WORLD_HUMAN_GUARD_STAND', 
-            'WORLD_HUMAN_SMOKING', 
-            'WORLD_HUMAN_DRINKING'
-        },
-        idleAnimation = {
-            dict = 'amb@world_human_stand_guard@male@base',
-            anim = 'base'
-        }
-    },
-    ['Vagos'] = {
-        scenerios = {
-            'WORLD_HUMAN_DRINKING', 
-            'WORLD_HUMAN_SMOKING', 
-            'WORLD_HUMAN_LEANING'
-        },
-        idleAnimation = {
-            dict = 'amb@world_human_hang_out_street@male_c@base',
-            anim = 'base'
-        }
-    },
-    ['Families'] = {
-        scenerios = {
-            'WORLD_HUMAN_STAND_IMPATIENT', 
-            'WORLD_HUMAN_SMOKING_POT', 
-            'WORLD_HUMAN_DRINKING'
-        },
-        idleAnimation = {
-            dict = 'amb
+}
