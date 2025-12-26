@@ -14,6 +14,68 @@ local lastSpawnTime = {}        -- Cooldown tracking per territory
 local inCombat = false          -- Is player in combat
 
 -- ============================================
+-- RELATIONSHIP GROUP MANAGEMENT (Client-side)
+-- These natives only work on client
+-- ============================================
+
+local gangRelationshipGroups = {}
+local relationshipsInitialized = false
+
+local function GetOrCreateGangRelationship(gangName)
+    if gangRelationshipGroups[gangName] then
+        return gangRelationshipGroups[gangName]
+    end
+
+    -- Create unique relationship group for this gang
+    local groupName = 'GANG_' .. string.upper(gangName)
+    local groupHash = GetHashKey(groupName)
+
+    AddRelationshipGroup(groupName)
+    gangRelationshipGroups[gangName] = groupHash
+
+    return groupHash
+end
+
+local function SetupGangRelationships()
+    if relationshipsInitialized then return end
+
+    local gangs = {}
+    for gangName, _ in pairs(Config.GangData) do
+        gangs[#gangs + 1] = gangName
+        GetOrCreateGangRelationship(gangName)
+    end
+
+    -- Set up relationships between all gangs
+    for _, gang1 in ipairs(gangs) do
+        local hash1 = gangRelationshipGroups[gang1]
+
+        for _, gang2 in ipairs(gangs) do
+            local hash2 = gangRelationshipGroups[gang2]
+
+            if gang1 == gang2 then
+                -- Same gang = respect
+                SetRelationshipBetweenGroups(Config.Relationships.defaultToSameGang, hash1, hash2)
+            else
+                -- Different gangs = hate
+                SetRelationshipBetweenGroups(Config.Relationships.defaultToRivals, hash1, hash2)
+            end
+        end
+
+        -- Relationship to police
+        SetRelationshipBetweenGroups(Config.Relationships.defaultToPolice, hash1, GetHashKey('COP'))
+
+        -- Relationship to player (initially neutral, updated when player gang is known)
+        SetRelationshipBetweenGroups(1, hash1, GetHashKey('PLAYER'))
+    end
+
+    relationshipsInitialized = true
+
+    if Config.Debug then
+        print('[GangAI] Relationship groups initialized for ' .. #gangs .. ' gangs')
+    end
+end
+
+-- ============================================
 -- TIERED PROXIMITY THROTTLING
 -- ============================================
 
@@ -58,17 +120,33 @@ end
 -- PLAYER RELATIONSHIP SYNC
 -- ============================================
 
-RegisterNetEvent('gangai:client:setPlayerRelationship', function(gang, hash)
+RegisterNetEvent('gangai:client:setPlayerRelationship', function(gang)
     playerGang = gang
-    playerRelationshipHash = hash
 
-    if gang then
+    -- Ensure relationships are set up
+    SetupGangRelationships()
+
+    if gang and gangRelationshipGroups[gang] then
         local ped = PlayerPedId()
-        SetPedRelationshipGroupHash(ped, hash)
+        playerRelationshipHash = gangRelationshipGroups[gang]
+        SetPedRelationshipGroupHash(ped, playerRelationshipHash)
+
+        -- Update relationships: player's gang is friendly, others are enemies
+        for gangName, hash in pairs(gangRelationshipGroups) do
+            if gangName == gang then
+                SetRelationshipBetweenGroups(Config.Relationships.defaultToSameGang, hash, GetHashKey('PLAYER'))
+                SetRelationshipBetweenGroups(Config.Relationships.defaultToSameGang, GetHashKey('PLAYER'), hash)
+            else
+                SetRelationshipBetweenGroups(Config.Relationships.defaultToRivals, hash, GetHashKey('PLAYER'))
+                SetRelationshipBetweenGroups(Config.Relationships.defaultToRivals, GetHashKey('PLAYER'), hash)
+            end
+        end
 
         if Config.Debug then
             print('[GangAI] Player relationship set to gang: ' .. gang)
         end
+    else
+        playerRelationshipHash = nil
     end
 end)
 
@@ -175,7 +253,13 @@ end
 -- NPC SPAWNING
 -- ============================================
 
-local function SpawnGangNPC(gangName, gangData, coords, relationshipHash)
+local function SpawnGangNPC(gangName, gangData, coords)
+    -- Ensure relationships are set up first
+    SetupGangRelationships()
+
+    -- Get relationship hash for this gang (created client-side)
+    local relationshipHash = GetOrCreateGangRelationship(gangName)
+
     -- Select random model
     local modelName = gangData.models[math.random(#gangData.models)]
     local modelHash = GetHashKey(modelName)
@@ -265,7 +349,7 @@ RegisterNetEvent('gangai:client:spawnAmbientNPCs', function(data)
     if not data or not data.gangData then return end
 
     for i = 1, data.count do
-        local ped = SpawnGangNPC(data.gangName, data.gangData, data.coords, data.relationshipHash)
+        local ped = SpawnGangNPC(data.gangName, data.gangData, data.coords)
         if ped then
             Wait(100) -- Stagger spawns
         end
@@ -287,7 +371,7 @@ RegisterNetEvent('gangai:client:spawnWarReinforcements', function(data)
     if dist > 300.0 then return end
 
     for i = 1, data.count do
-        local ped = SpawnGangNPC(data.gangName, data.gangData, data.coords, data.relationshipHash)
+        local ped = SpawnGangNPC(data.gangName, data.gangData, data.coords)
         if ped then
             -- War NPCs are immediately aggressive
             TaskCombatHatedTargetsAroundPed(ped, 150.0, 0)
@@ -461,6 +545,9 @@ end)
 
 CreateThread(function()
     Wait(3000)
+
+    -- Setup relationship groups (client-side only)
+    SetupGangRelationships()
 
     -- Sync player relationship
     TriggerServerEvent('gangai:server:syncPlayerRelationship')

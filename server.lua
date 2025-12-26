@@ -66,74 +66,16 @@ local function SyncRcoreTerritories()
 end
 
 -- ============================================
--- RELATIONSHIP MANAGEMENT
--- ============================================
-
--- Get relationship hash for a gang
-local gangRelationshipGroups = {}
-
-local function GetOrCreateGangRelationship(gangName)
-    if gangRelationshipGroups[gangName] then
-        return gangRelationshipGroups[gangName]
-    end
-
-    -- Create unique relationship group for this gang
-    local groupName = 'GANG_' .. string.upper(gangName)
-    local groupHash = GetHashKey(groupName)
-
-    AddRelationshipGroup(groupName)
-    gangRelationshipGroups[gangName] = groupHash
-
-    return groupHash
-end
-
--- Setup relationships between gang groups
-local function SetupGangRelationships()
-    local gangs = {}
-    for gangName, _ in pairs(Config.GangData) do
-        gangs[#gangs + 1] = gangName
-        GetOrCreateGangRelationship(gangName)
-    end
-
-    -- Set up relationships between all gangs
-    for i, gang1 in ipairs(gangs) do
-        local hash1 = gangRelationshipGroups[gang1]
-
-        for j, gang2 in ipairs(gangs) do
-            local hash2 = gangRelationshipGroups[gang2]
-
-            if gang1 == gang2 then
-                -- Same gang = respect
-                SetRelationshipBetweenGroups(Config.Relationships.defaultToSameGang, hash1, hash2)
-            else
-                -- Different gangs = hate
-                SetRelationshipBetweenGroups(Config.Relationships.defaultToRivals, hash1, hash2)
-            end
-        end
-
-        -- Relationship to police
-        SetRelationshipBetweenGroups(Config.Relationships.defaultToPolice, hash1, GetHashKey('COP'))
-    end
-
-    if Config.Debug then
-        print('^2[GangAI] Relationship groups initialized for ' .. #gangs .. ' gangs')
-    end
-end
-
--- ============================================
 -- PLAYER GANG SYNC
--- Sync player relationship based on their rcore gang
+-- Server sends gang name, client handles relationship groups
 -- ============================================
 
 RegisterNetEvent('gangai:server:syncPlayerRelationship', function()
     local src = source
     local playerGang = GetPlayerGang(src)
 
-    if playerGang and gangRelationshipGroups[playerGang] then
-        TriggerClientEvent('gangai:client:setPlayerRelationship', src, playerGang, gangRelationshipGroups[playerGang])
-    else
-        TriggerClientEvent('gangai:client:setPlayerRelationship', src, nil, nil)
-    end
+    -- Send gang name to client - client will create/use relationship groups
+    TriggerClientEvent('gangai:client:setPlayerRelationship', src, playerGang)
 end)
 
 -- ============================================
@@ -170,14 +112,12 @@ RegisterNetEvent('gangai:server:requestAmbientSpawn', function(gangName, coords,
     spawnCount = math.min(spawnCount, Config.MaxSpawnedNPCs - spawnedNPCCount)
 
     if spawnCount > 0 then
-        local relationshipGroup = GetOrCreateGangRelationship(gangName)
-
+        -- Send gang name - client handles relationship groups
         TriggerClientEvent('gangai:client:spawnAmbientNPCs', src, {
             gangName = gangName,
             gangData = gangData,
             coords = coords,
-            count = spawnCount,
-            relationshipHash = relationshipGroup
+            count = spawnCount
         })
 
         spawnedNPCCount = spawnedNPCCount + spawnCount
@@ -236,8 +176,7 @@ RegisterNetEvent('rcore_gangs:server:warStarted', function(zoneId, attackingGang
                     gangData = Config.GangData[defendingGang:lower()],
                     coords = zoneCoords,
                     count = wave.count,
-                    isDefender = true,
-                    relationshipHash = GetOrCreateGangRelationship(defendingGang:lower())
+                    isDefender = true
                 })
             end
         end)
@@ -253,8 +192,7 @@ RegisterNetEvent('rcore_gangs:server:warStarted', function(zoneId, attackingGang
                         gangData = Config.GangData[attackingGang:lower()],
                         coords = zoneCoords,
                         count = wave.count,
-                        isDefender = false,
-                        relationshipHash = GetOrCreateGangRelationship(attackingGang:lower())
+                        isDefender = false
                     })
                 end
             end)
@@ -360,9 +298,6 @@ end
 
 CreateThread(function()
     Wait(2000) -- Wait for resources to load
-
-    -- Setup relationship groups
-    SetupGangRelationships()
 
     -- Initial sync with rcore
     SyncRcoreTerritories()
