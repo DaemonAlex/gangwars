@@ -1,383 +1,384 @@
-local lib = exports.ox_lib
+-- ============================================
+-- GANG AMBIENT AI - Server
+-- Augments rcore_gangs with ambient NPC life
+-- ============================================
+
 local QBCore = exports['qb-core']:GetCoreObject()
 
--- Ensure we're using the same Config structure as client.lua
-Config = Config or { Gangs = {}, PoliceJobs = {} }
+-- State tracking
+local activeWars = {}           -- Track active territory wars
+local territoryCache = {}       -- Cache of rcore territory data
+local spawnedNPCCount = 0       -- Track total spawned NPCs
 
-local lastWarTime = {}
-local gangReputations = {}
-local warCooldown = 600000  -- 10 minutes cooldown
+-- ============================================
+-- RCORE_GANGS INTEGRATION
+-- ============================================
 
--- Initialize gang reputation system
-Citizen.CreateThread(function()
-    if Config.RepSystem and Config.RepSystem.enabled then
-        for gangName, _ in pairs(Config.Gangs or {}) do
-            gangReputations[gangName] = Config.RepSystem.baseReputation or 100
-        end
+-- Check if rcore_gangs is running
+local function IsRcoreAvailable()
+    return GetResourceState(Config.Integration.rcoreResource) == 'started'
+end
+
+-- Get player's gang from rcore_gangs
+local function GetPlayerGang(source)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return nil end
+
+    -- QBCore stores gang in PlayerData.gang
+    local gangData = Player.PlayerData.gang
+    if gangData and gangData.name and gangData.name ~= 'none' then
+        return gangData.name:lower()
     end
-end)
 
--- Debug logging - Use pcall to prevent errors if JSON encoding fails
-Citizen.CreateThread(function()
-    Citizen.Wait(2000) -- Wait for config to load
-    print("^2DEBUG:^0 Server script loaded")
-    local status, result = pcall(function()
-        for gang, data in pairs(Config.Gangs or {}) do
-            print("^2DEBUG:^0 Gang loaded: " .. gang)
-        end
+    return nil
+end
+
+-- Get territory owner from rcore (if available)
+local function GetTerritoryOwner(zoneId)
+    if not IsRcoreAvailable() then return nil end
+
+    -- Try to get territory data from rcore exports
+    local success, result = pcall(function()
+        return exports[Config.Integration.rcoreResource]:GetZoneOwner(zoneId)
     end)
-    
-    if not status then
-        print("^1ERROR:^0 Failed to print config: " .. tostring(result))
-    end
-end)
 
--- Handle a player joining a gang
-RegisterNetEvent('gangWars:playerJoinedGang')
-AddEventHandler('gangWars:playerJoinedGang', function(gangName)
-    local src = source
-    if not gangName or not Config.Gangs[gangName] then
-        TriggerClientEvent('ox_lib:notify', src, {
-            title = 'Error',
-            description = 'Invalid gang name',
-            type = 'error',
-            duration = 5000
-        })
-        return
-    end
-    
-    local Player = QBCore.Functions.GetPlayer(src)
-    if not Player then return end
-    
-    print("^3INFO:^0 Player " .. src .. " joined gang: " .. gangName)
-    
-    -- Here you could add code to set player's gang information in your framework
-    -- For example, updating their metadata or gang status
-    
-    -- Add reputation if rep system enabled
-    if Config.RepSystem and Config.RepSystem.enabled then
-        local repGain = Config.RepSystem.reputationGain.joinGang or 50
-        ChangeGangReputation(gangName, repGain)
-        
-        -- Get player benefits based on gang reputation
-        local benefits = GetGangBenefits(gangName)
-        if benefits then
-            TriggerClientEvent('ox_lib:notify', src, {
-                title = 'Gang Status',
-                description = benefits,
-                type = 'info',
-                duration = 7000
-            })
-        end
-    end
-    
-    TriggerClientEvent('ox_lib:notify', src, {
-        title = 'Gang Joined',
-        description = 'You are now a member of ' .. gangName,
-        type = 'success',
-        duration = 5000
-    })
-end)
-
--- Trigger a gang war event
-RegisterNetEvent('gangWars:triggerGangWar')
-AddEventHandler('gangWars:triggerGangWar', function(gangName)
-    if not gangName or not Config.Gangs[gangName] then
-        print("^1ERROR:^0 Invalid gang war trigger. Gang not found: " .. tostring(gangName))
-        return
+    if success and result then
+        return result:lower()
     end
 
-    print("^3INFO:^0 Gang War Started: " .. gangName)
-    
-    -- Send the entire gang data to the client for spawning members
-    TriggerClientEvent('gangwars:spawnGangMembers', -1, Config.Gangs[gangName])
-    
-    -- Send just the first territory point for effects and notifications
-    if Config.Gangs[gangName].territory and #Config.Gangs[gangName].territory > 0 then
-        TriggerClientEvent('gangWars:gangFightStarted', -1, Config.Gangs[gangName].territory[1])
-        TriggerClientEvent('gangWars:notifyGangActivity', -1, 'A gang war has broken out in ' .. gangName .. ' territory!', Config.Gangs[gangName].territory[1])
-        
-        -- Spawn territory props
-        TriggerClientEvent('gangwars:spawnTerritoryProps', -1, gangName, Config.Gangs[gangName].territory)
-    else
-        print("^1ERROR:^0 No territory data for gang: " .. gangName)
+    return nil
+end
+
+-- Get all rcore territories
+local function SyncRcoreTerritories()
+    if not IsRcoreAvailable() then return end
+
+    local success, zones = pcall(function()
+        return exports[Config.Integration.rcoreResource]:GetAllZones()
+    end)
+
+    if success and zones then
+        territoryCache = zones
+        if Config.Debug then
+            print('^2[GangAI] Synced ' .. #zones .. ' territories from rcore_gangs')
+        end
     end
-end)
+end
 
--- Check for proximity wars between gangs
-Citizen.CreateThread(function()
-    while true do
-        -- Use WarSettings if available, or default to 5 minutes
-        local interval = (Config.WarSettings and Config.WarSettings.proximityWarInterval) or 300000
-        Citizen.Wait(interval)
-        
-        -- Check that Config.Gangs exists and has data
-        if not Config.Gangs or next(Config.Gangs) == nil then
-            print("^1ERROR:^0 Config.Gangs is empty or not initialized")
-            Citizen.Wait(60000) -- Wait longer if config isn't loaded
-            goto continue
-        end
+-- ============================================
+-- RELATIONSHIP MANAGEMENT
+-- ============================================
 
-        -- Check for proximity wars only if we have WarSettings configured
-        if not Config.WarSettings or not Config.WarSettings.proximityThreshold then
-            print("^1WARNING:^0 Config.WarSettings not properly configured, skipping proximity checks")
-            goto continue
-        end
+-- Get relationship hash for a gang
+local gangRelationshipGroups = {}
 
-        for gangName, gangData in pairs(Config.Gangs) do
-            for rivalGang, rivalData in pairs(Config.Gangs) do
-                if gangName ~= rivalGang then
-                    local currentTime = GetGameTimer()
-                    local cooldownTime = (Config.WarSettings and Config.WarSettings.warCooldown) or warCooldown
-                    
-                    if not lastWarTime[gangName] or currentTime - lastWarTime[gangName] > cooldownTime then
-                        -- Make sure territory data exists and has at least one point
-                        if gangData.territory and rivalData.territory and 
-                           #gangData.territory > 0 and #rivalData.territory > 0 then
-                           
-                            local distance = #(vector3(gangData.territory[1].x, gangData.territory[1].y, gangData.territory[1].z) - 
-                                              vector3(rivalData.territory[1].x, rivalData.territory[1].y, rivalData.territory[1].z))
-
-                            if distance < Config.WarSettings.proximityThreshold then 
-                                print("^3INFO:^0 Proximity gang war triggered between " .. gangName .. " and " .. rivalGang)
-                                TriggerEvent('gangWars:triggerGangWar', gangName)
-                                TriggerEvent('gangWars:triggerGangWar', rivalGang)
-                                
-                                -- Determine winner (random for now, could be based on reputation later)
-                                local winner = (math.random() > 0.5) and gangName or rivalGang
-                                local loser = (winner == gangName) and rivalGang or gangName
-                                
-                                -- Update reputations if enabled
-                                if Config.RepSystem and Config.RepSystem.enabled then
-                                    ChangeGangReputation(winner, Config.RepSystem.reputationGain.winWar or 30)
-                                    ChangeGangReputation(loser, -(Config.RepSystem.reputationLoss.loseWar or 20))
-                                    
-                                    -- Announce winner
-                                    TriggerClientEvent('ox_lib:notify', -1, {
-                                        title = 'Gang War Results',
-                                        description = winner .. ' has won the territory war against ' .. loser .. '!',
-                                        type = 'info',
-                                        duration = 7000
-                                    })
-                                end
-                                
-                                lastWarTime[gangName] = currentTime
-                                lastWarTime[rivalGang] = currentTime
-                                break -- Only start one war per gang per cycle
-                            end
-                        else
-                            print("^1ERROR:^0 Missing territory data for " .. gangName .. " or " .. rivalGang)
-                        end
-                    end
-                end
-            end
-        end
-        
-        ::continue::
+local function GetOrCreateGangRelationship(gangName)
+    if gangRelationshipGroups[gangName] then
+        return gangRelationshipGroups[gangName]
     end
-end)
 
--- Schedule random gang wars
-Citizen.CreateThread(function()
-    while true do
-        -- Use WarSettings if available, or default to 4 hours
-        local interval = (Config.WarSettings and Config.WarSettings.randomWarInterval) or 14400000
-        Citizen.Wait(interval)
+    -- Create unique relationship group for this gang
+    local groupName = 'GANG_' .. string.upper(gangName)
+    local groupHash = GetHashKey(groupName)
 
-        -- Get all available gangs from config
-        local gangList = {}
-        for gang, _ in pairs(Config.Gangs or {}) do
-            table.insert(gangList, gang)
-        end
-        
-        if #gangList < 2 then
-            print("^1ERROR:^0 Not enough gangs configured for a random war")
-            goto continue
-        end
+    AddRelationshipGroup(groupName)
+    gangRelationshipGroups[gangName] = groupHash
 
-        -- Randomize selection
-        math.randomseed(GetGameTimer())
-        
-        -- Select two random gangs
-        local idx1 = math.random(#gangList)
-        local gang1 = gangList[idx1]
-        table.remove(gangList, idx1)
-        
-        local idx2 = math.random(#gangList)
-        local gang2 = gangList[idx2]
-        
-        print("^3INFO:^0 A major gang war has started between " .. gang1 .. " and " .. gang2 .. "!")
-        TriggerEvent('gangWars:triggerGangWar', gang1)
-        TriggerEvent('gangWars:triggerGangWar', gang2)
-        
-        -- Determine winner based on reputation if enabled
-        if Config.RepSystem and Config.RepSystem.enabled then
-            local gang1Rep = gangReputations[gang1] or 100
-            local gang2Rep = gangReputations[gang2] or 100
-            
-            -- 70% chance higher rep gang wins, 30% chance lower rep gang wins (for underdog chance)
-            local winner
-            if gang1Rep > gang2Rep then
-                winner = (math.random() < 0.7) and gang1 or gang2
+    return groupHash
+end
+
+-- Setup relationships between gang groups
+local function SetupGangRelationships()
+    local gangs = {}
+    for gangName, _ in pairs(Config.GangData) do
+        gangs[#gangs + 1] = gangName
+        GetOrCreateGangRelationship(gangName)
+    end
+
+    -- Set up relationships between all gangs
+    for i, gang1 in ipairs(gangs) do
+        local hash1 = gangRelationshipGroups[gang1]
+
+        for j, gang2 in ipairs(gangs) do
+            local hash2 = gangRelationshipGroups[gang2]
+
+            if gang1 == gang2 then
+                -- Same gang = respect
+                SetRelationshipBetweenGroups(Config.Relationships.defaultToSameGang, hash1, hash2)
             else
-                winner = (math.random() < 0.7) and gang2 or gang1
+                -- Different gangs = hate
+                SetRelationshipBetweenGroups(Config.Relationships.defaultToRivals, hash1, hash2)
             end
-            
-            local loser = (winner == gang1) and gang2 or gang1
-            
-            -- Update reputations
-            ChangeGangReputation(winner, Config.RepSystem.reputationGain.winWar or 30)
-            ChangeGangReputation(loser, -(Config.RepSystem.reputationLoss.loseWar or 20))
-            
-            -- Announce winner after delay
-            Citizen.SetTimeout(60000, function() -- 1 minute delay
-                TriggerClientEvent('ox_lib:notify', -1, {
-                    title = 'Gang War Results',
-                    description = winner .. ' has won the territory war against ' .. loser .. '!',
-                    type = 'info',
-                    duration = 7000
+        end
+
+        -- Relationship to police
+        SetRelationshipBetweenGroups(Config.Relationships.defaultToPolice, hash1, GetHashKey('COP'))
+    end
+
+    if Config.Debug then
+        print('^2[GangAI] Relationship groups initialized for ' .. #gangs .. ' gangs')
+    end
+end
+
+-- ============================================
+-- PLAYER GANG SYNC
+-- Sync player relationship based on their rcore gang
+-- ============================================
+
+RegisterNetEvent('gangai:server:syncPlayerRelationship', function()
+    local src = source
+    local playerGang = GetPlayerGang(src)
+
+    if playerGang and gangRelationshipGroups[playerGang] then
+        TriggerClientEvent('gangai:client:setPlayerRelationship', src, playerGang, gangRelationshipGroups[playerGang])
+    else
+        TriggerClientEvent('gangai:client:setPlayerRelationship', src, nil, nil)
+    end
+end)
+
+-- ============================================
+-- AMBIENT SPAWNING
+-- ============================================
+
+-- Request ambient spawn for a territory
+RegisterNetEvent('gangai:server:requestAmbientSpawn', function(gangName, coords, heatLevel)
+    local src = source
+
+    -- Validate gang exists
+    gangName = gangName:lower()
+    local gangData = Config.GangData[gangName]
+    if not gangData then
+        if Config.Debug then
+            print('^1[GangAI] Unknown gang requested for spawn: ' .. gangName)
+        end
+        return
+    end
+
+    -- Check global NPC limit
+    if spawnedNPCCount >= Config.MaxSpawnedNPCs then
+        if Config.Debug then
+            print('^3[GangAI] NPC limit reached, skipping spawn')
+        end
+        return
+    end
+
+    -- Determine spawn count based on heat level
+    local density = Config.AmbientSpawning.spawnDensity[heatLevel] or Config.AmbientSpawning.spawnDensity.peaceful
+    local spawnCount = math.random(density.min, density.max)
+
+    -- Clamp to not exceed limit
+    spawnCount = math.min(spawnCount, Config.MaxSpawnedNPCs - spawnedNPCCount)
+
+    if spawnCount > 0 then
+        local relationshipGroup = GetOrCreateGangRelationship(gangName)
+
+        TriggerClientEvent('gangai:client:spawnAmbientNPCs', src, {
+            gangName = gangName,
+            gangData = gangData,
+            coords = coords,
+            count = spawnCount,
+            relationshipHash = relationshipGroup
+        })
+
+        spawnedNPCCount = spawnedNPCCount + spawnCount
+
+        if Config.Debug then
+            print('^2[GangAI] Spawning ' .. spawnCount .. ' ' .. gangName .. ' NPCs (total: ' .. spawnedNPCCount .. ')')
+        end
+    end
+end)
+
+-- NPC despawned callback
+RegisterNetEvent('gangai:server:npcDespawned', function(count)
+    spawnedNPCCount = math.max(0, spawnedNPCCount - (count or 1))
+end)
+
+-- ============================================
+-- WAR REINFORCEMENTS
+-- Triggered when rcore starts a territory war
+-- ============================================
+
+-- Listen for rcore war events
+RegisterNetEvent('rcore_gangs:server:warStarted', function(zoneId, attackingGang, defendingGang)
+    if not Config.WarReinforcements.enabled then return end
+
+    local warId = zoneId .. '_' .. os.time()
+    activeWars[warId] = {
+        zone = zoneId,
+        attacker = attackingGang:lower(),
+        defender = defendingGang:lower(),
+        startTime = GetGameTimer()
+    }
+
+    if Config.Debug then
+        print('^3[GangAI] War started: ' .. attackingGang .. ' vs ' .. defendingGang .. ' at zone ' .. zoneId)
+    end
+
+    -- Get zone coords from cache or rcore
+    local zoneCoords = nil
+    if territoryCache[zoneId] then
+        zoneCoords = territoryCache[zoneId].coords
+    end
+
+    if not zoneCoords then
+        if Config.Debug then
+            print('^1[GangAI] Could not get zone coordinates for reinforcements')
+        end
+        return
+    end
+
+    -- Spawn defender waves
+    for _, wave in ipairs(Config.WarReinforcements.waves) do
+        SetTimeout(wave.delay, function()
+            if activeWars[warId] then -- War still active
+                TriggerClientEvent('gangai:client:spawnWarReinforcements', -1, {
+                    gangName = defendingGang:lower(),
+                    gangData = Config.GangData[defendingGang:lower()],
+                    coords = zoneCoords,
+                    count = wave.count,
+                    isDefender = true,
+                    relationshipHash = GetOrCreateGangRelationship(defendingGang:lower())
                 })
+            end
+        end)
+    end
+
+    -- Spawn attacker waves
+    if Config.WarReinforcements.spawnAttackers then
+        for _, wave in ipairs(Config.WarReinforcements.attackerWaves) do
+            SetTimeout(wave.delay, function()
+                if activeWars[warId] then
+                    TriggerClientEvent('gangai:client:spawnWarReinforcements', -1, {
+                        gangName = attackingGang:lower(),
+                        gangData = Config.GangData[attackingGang:lower()],
+                        coords = zoneCoords,
+                        count = wave.count,
+                        isDefender = false,
+                        relationshipHash = GetOrCreateGangRelationship(attackingGang:lower())
+                    })
+                end
             end)
         end
-        
-        ::continue::
     end
 end)
 
--- Handle player attacking gang member
-RegisterNetEvent('gangWars:playerAttackedGang')
-AddEventHandler('gangWars:playerAttackedGang', function(gangName)
-    local src = source
-    
-    if not gangName or not Config.Gangs[gangName] then
-        print("^1ERROR:^0 Invalid gang retaliation. Gang not found: " .. tostring(gangName))
-        return
-    end
+-- Listen for rcore war end events
+RegisterNetEvent('rcore_gangs:server:warEnded', function(zoneId, winningGang)
+    -- Find and remove the war
+    for warId, war in pairs(activeWars) do
+        if war.zone == zoneId then
+            activeWars[warId] = nil
 
-    print("^1ALERT:^0 Player " .. src .. " attack detected on " .. gangName .. "! Retaliation initiated.")
-    
-    -- Update reputation if player attacked their own gang
-    if Config.RepSystem and Config.RepSystem.enabled then
-        local Player = QBCore.Functions.GetPlayer(src)
-        if Player and Player.PlayerData.metadata and Player.PlayerData.metadata.gang == gangName then
-            -- Player attacked their own gang
-            local repLoss = Config.RepSystem.reputationLoss.attackOwnGang or 50
-            TriggerClientEvent('ox_lib:notify', src, {
-                title = 'Gang Reputation',
-                description = 'You lost ' .. repLoss .. ' gang reputation for attacking your own gang!',
-                type = 'error',
-                duration = 5000
-            })
-            
-            -- Update player's metadata with new rep
-            local currentRep = Player.PlayerData.metadata.gangrep or 100
-            Player.Functions.SetMetaData('gangrep', currentRep - repLoss)
+            if Config.Debug then
+                print('^2[GangAI] War ended at zone ' .. zoneId .. '. Winner: ' .. tostring(winningGang))
+            end
+            break
         end
     end
-    
-    TriggerEvent('gangWars:triggerGangWar', gangName)
 end)
 
--- Add debug command for testing
-RegisterCommand('testwar', function(source, args, rawCommand)
-    local src = source
-    local player = QBCore.Functions.GetPlayer(src)
-    
-    -- Check if player is admin
-    if player and player.PlayerData.permission == "admin" then
-        local gangName = args[1]
-        if gangName and Config.Gangs[gangName] then
-            print("^3INFO:^0 Admin " .. src .. " triggered test war for " .. gangName)
-            TriggerEvent('gangWars:triggerGangWar', gangName)
-        else
-            local gangs = {}
-            for gang, _ in pairs(Config.Gangs) do
-                table.insert(gangs, gang)
+-- ============================================
+-- POLICE NOTIFICATIONS
+-- ============================================
+
+RegisterNetEvent('gangai:server:notifyPolice', function(message, coords)
+    local players = QBCore.Functions.GetQBPlayers()
+
+    for _, Player in pairs(players) do
+        if Player and Config.PoliceJobs[Player.PlayerData.job.name] then
+            local playerCoords = GetEntityCoords(GetPlayerPed(Player.PlayerData.source))
+            local distance = #(vector3(playerCoords.x, playerCoords.y, playerCoords.z) - vector3(coords.x, coords.y, coords.z))
+
+            if distance < Config.PoliceNotifyDistance then
+                TriggerClientEvent('ox_lib:notify', Player.PlayerData.source, {
+                    title = 'Dispatch',
+                    description = message,
+                    type = 'warning',
+                    duration = 7000
+                })
             end
-            TriggerClientEvent('ox_lib:notify', src, {
+        end
+    end
+end)
+
+-- ============================================
+-- ADMIN COMMANDS
+-- ============================================
+
+QBCore.Commands.Add('gangai', 'Gang AI admin commands', {{ name = 'action', help = 'status/spawn/clear' }, { name = 'gang', help = 'Gang name (optional)' }}, false, function(source, args)
+    local action = args[1]
+
+    if action == 'status' then
+        TriggerClientEvent('ox_lib:notify', source, {
+            title = 'Gang AI Status',
+            description = 'Active NPCs: ' .. spawnedNPCCount .. '/' .. Config.MaxSpawnedNPCs .. '\nActive Wars: ' .. tableCount(activeWars),
+            type = 'info',
+            duration = 5000
+        })
+    elseif action == 'spawn' and args[2] then
+        local gangName = args[2]:lower()
+        if Config.GangData[gangName] then
+            local ped = GetPlayerPed(source)
+            local coords = GetEntityCoords(ped)
+            TriggerEvent('gangai:server:requestAmbientSpawn', gangName, coords, 'wartime')
+            TriggerClientEvent('ox_lib:notify', source, {
+                title = 'Gang AI',
+                description = 'Spawning ' .. gangName .. ' NPCs',
+                type = 'success'
+            })
+        else
+            TriggerClientEvent('ox_lib:notify', source, {
                 title = 'Error',
-                description = 'Invalid gang. Available: ' .. table.concat(gangs, ', '),
+                description = 'Unknown gang: ' .. args[2],
                 type = 'error'
             })
         end
-    else
-        TriggerClientEvent('ox_lib:notify', src, {
-            title = 'Error',
-            description = 'You do not have permission to use this command',
-            type = 'error'
+    elseif action == 'clear' then
+        TriggerClientEvent('gangai:client:clearAllNPCs', -1)
+        spawnedNPCCount = 0
+        TriggerClientEvent('ox_lib:notify', source, {
+            title = 'Gang AI',
+            description = 'All gang NPCs cleared',
+            type = 'success'
         })
     end
-end, true) -- restricted command
+end, 'admin')
 
--- Add command to check gang reputation
-RegisterCommand('checkrep', function(source, args)
-    local src = source
-    local player = QBCore.Functions.GetPlayer(src)
-    
-    if not player then return end
-    
-    local gangName = args[1]
-    if not gangName and player.PlayerData.metadata and player.PlayerData.metadata.gang then
-        gangName = player.PlayerData.metadata.gang
-    end
-    
-    if gangName and Config.Gangs[gangName] then
-        local rep = gangReputations[gangName] or Config.RepSystem.baseReputation or 100
-        local benefits = GetGangBenefits(gangName)
-        
-        TriggerClientEvent('ox_lib:notify', src, {
-            title = gangName .. ' Reputation',
-            description = 'Current reputation: ' .. rep .. '\n' .. benefits,
-            type = 'info',
-            duration = 7000
-        })
-    else
-        TriggerClientEvent('ox_lib:notify', src, {
-            title = 'Error',
-            description = 'You are not in a gang or specified an invalid gang',
-            type = 'error',
-            duration = 5000
-        })
-    end
-end, false)
+-- ============================================
+-- UTILITY FUNCTIONS
+-- ============================================
 
--- Utility function to change gang reputation
-function ChangeGangReputation(gangName, amount)
-    if not Config.RepSystem or not Config.RepSystem.enabled then return end
-    
-    if not gangReputations[gangName] then
-        gangReputations[gangName] = Config.RepSystem.baseReputation or 100
-    end
-    
-    gangReputations[gangName] = gangReputations[gangName] + amount
-    
-    -- Ensure reputation doesn't go below 0
-    if gangReputations[gangName] < 0 then
-        gangReputations[gangName] = 0
-    end
-    
-    print("^3INFO:^0 " .. gangName .. " reputation changed by " .. amount .. ". New total: " .. gangReputations[gangName])
-    return gangReputations[gangName]
+function tableCount(t)
+    local count = 0
+    for _ in pairs(t) do count = count + 1 end
+    return count
 end
 
--- Utility function to get gang benefits based on reputation
-function GetGangBenefits(gangName)
-    if not Config.RepSystem or not Config.RepSystem.enabled or not gangName then return nil end
-    
-    local rep = gangReputations[gangName] or Config.RepSystem.baseReputation or 100
-    local benefits = "No special benefits"
-    
-    -- Get the highest threshold the gang qualifies for
-    local highestQualifiedThreshold = 0
-    for threshold, _ in pairs(Config.RepSystem.benefitsThresholds or {}) do
-        if rep >= threshold and threshold > highestQualifiedThreshold then
-            highestQualifiedThreshold = threshold
-        end
+-- ============================================
+-- INITIALIZATION
+-- ============================================
+
+CreateThread(function()
+    Wait(2000) -- Wait for resources to load
+
+    -- Setup relationship groups
+    SetupGangRelationships()
+
+    -- Initial sync with rcore
+    SyncRcoreTerritories()
+
+    -- Periodic territory sync
+    while true do
+        Wait(Config.Integration.syncInterval)
+        SyncRcoreTerritories()
     end
-    
-    if highestQualifiedThreshold > 0 then
-        benefits = Config.RepSystem.benefitsThresholds[highestQualifiedThreshold]
+end)
+
+-- Cleanup on resource stop
+AddEventHandler('onResourceStop', function(resource)
+    if resource == GetCurrentResourceName() then
+        TriggerClientEvent('gangai:client:clearAllNPCs', -1)
     end
-    
-    return benefits
-end
+end)
+
+print('^2[GangAI] Server initialized - rcore_gangs augmentation mode')

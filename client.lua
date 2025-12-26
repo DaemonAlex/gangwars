@@ -1,348 +1,475 @@
-local lib = exports.ox_lib
+-- ============================================
+-- GANG AMBIENT AI - Client
+-- Handles NPC spawning, combat AI, and throttling
+-- ============================================
+
 local QBCore = exports['qb-core']:GetCoreObject()
-Config = Config or { Gangs = {}, PoliceJobs = {} }
 
--- Debug logging
-print("^2DEBUG:^0 Client script loaded")
+-- State tracking
+local spawnedNPCs = {}          -- All spawned NPCs { entity, gangName, spawnTime }
+local playerGang = nil          -- Player's gang from rcore
+local playerRelationshipHash = nil
+local nearbyTerritories = {}    -- Cached nearby territory data
+local lastSpawnTime = {}        -- Cooldown tracking per territory
+local inCombat = false          -- Is player in combat
 
--- Handle notification of gang activity
-RegisterNetEvent('gangWars:notifyGangActivity')
-AddEventHandler('gangWars:notifyGangActivity', function(message, gangTerritoryPoint)
-    if not gangTerritoryPoint then
-        print("^1ERROR:^0 No territory data provided for notification")
-        return
-    end
-    
-    local playerPed = PlayerPedId()
-    local playerCoords = GetEntityCoords(playerPed)
+-- ============================================
+-- TIERED PROXIMITY THROTTLING
+-- ============================================
 
-    local distance = #(vector3(playerCoords.x, playerCoords.y, playerCoords.z) - 
-                      vector3(gangTerritoryPoint.x, gangTerritoryPoint.y, gangTerritoryPoint.z))
-    
-    if distance < (Config.NotificationDistance or 500.0) then
-        lib.notify({
-            title = 'Gang Activity',
-            description = message,
-            type = 'error',
-            duration = 5000
-        })
+local currentTickRate = Config.AmbientSpawning.tickRates.background
+
+local function GetOptimalTickRate()
+    local ped = PlayerPedId()
+    local coords = GetEntityCoords(ped)
+
+    -- Check if player is in combat
+    if IsPedInMeleeCombat(ped) or IsPedShooting(ped) then
+        inCombat = true
+        return Config.AmbientSpawning.tickRates.combat
     end
 
-    local playerData = QBCore.Functions.GetPlayerData()
-    if playerData and playerData.job and Config.PoliceJobs and Config.PoliceJobs[playerData.job.name] then
-        lib.notify({
-            title = 'Police Alert',
-            description = 'Gunshots reported in a gang territory!',
-            type = 'warning',
-            duration = 7000
-        })
+    -- Check distance to nearest gang NPC
+    local nearestNPCDist = 999.0
+    for _, npcData in pairs(spawnedNPCs) do
+        if DoesEntityExist(npcData.entity) then
+            local npcCoords = GetEntityCoords(npcData.entity)
+            local dist = #(coords - npcCoords)
+            if dist < nearestNPCDist then
+                nearestNPCDist = dist
+            end
+        end
+    end
+
+    inCombat = false
+
+    if nearestNPCDist < 20.0 then
+        return Config.AmbientSpawning.tickRates.combat
+    elseif nearestNPCDist < 50.0 then
+        return Config.AmbientSpawning.tickRates.nearby
+    elseif nearestNPCDist < 150.0 then
+        return Config.AmbientSpawning.tickRates.distant
+    end
+
+    return Config.AmbientSpawning.tickRates.background
+end
+
+-- ============================================
+-- PLAYER RELATIONSHIP SYNC
+-- ============================================
+
+RegisterNetEvent('gangai:client:setPlayerRelationship', function(gang, hash)
+    playerGang = gang
+    playerRelationshipHash = hash
+
+    if gang then
+        local ped = PlayerPedId()
+        SetPedRelationshipGroupHash(ped, hash)
+
+        if Config.Debug then
+            print('[GangAI] Player relationship set to gang: ' .. gang)
+        end
     end
 end)
 
--- Handle gang fight effects
-RegisterNetEvent('gangWars:gangFightStarted')
-AddEventHandler('gangWars:gangFightStarted', function(coords)
-    if not coords then
-        print("^1ERROR:^0 No coordinates provided for gang fight effects")
-        return
-    end
-    
-    -- Play gang war sounds
-    PlaySoundFromCoord(-1, "GENERIC_SHOT_FIRED", coords.x, coords.y, coords.z, "DLC_HEISTS_GENERAL_FRONTEND_SOUNDS", true, 120, true)
-    
-    -- Start a particle effect at the coordinates
-    RequestNamedPtfxAsset("scr_rcbarry2")
-    while not HasNamedPtfxAssetLoaded("scr_rcbarry2") do
-        Citizen.Wait(100)
-    end
-    
-    UseParticleFxAssetNextCall("scr_rcbarry2")
-    local effect = StartParticleFxLoopedAtCoord("scr_clown_appears", coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 1.0, false, false, false, false)
-    SetParticleFxLoopedColour(effect, 1.0, 0.0, 0.0, 0)
-    Citizen.Wait(5000)
-    StopParticleFxLooped(effect, 0)
+-- Sync relationship on spawn/load
+AddEventHandler('QBCore:Client:OnPlayerLoaded', function()
+    Wait(2000)
+    TriggerServerEvent('gangai:server:syncPlayerRelationship')
 end)
 
--- Check if player is shooting at gang members
-Citizen.CreateThread(function()
-    while true do
-        Citizen.Wait(500)  
-        local playerPed = PlayerPedId()
-        if IsPedShooting(playerPed) then
-            local _, entity = GetEntityPlayerIsFreeAimingAt(PlayerId())
-            if DoesEntityExist(entity) and not IsPedAPlayer(entity) then
-                local entityModel = GetEntityModel(entity)
+AddEventHandler('QBCore:Client:OnGangUpdate', function(gang)
+    TriggerServerEvent('gangai:server:syncPlayerRelationship')
+end)
 
-                -- Check if Config.Gangs exists
-                if not Config.Gangs then
-                    print("^1ERROR:^0 Config.Gangs is nil or not loaded properly")
-                    Citizen.Wait(5000) -- Wait longer before next check
-                    goto continue
+-- ============================================
+-- ADVANCED COMBAT AI
+-- ============================================
+
+local function ApplyCombatAI(ped, gangData)
+    local style = Config.CombatAI.styles[gangData.combatStyle] or Config.CombatAI.styles.balanced
+
+    -- Base combat attributes
+    SetPedCombatMovement(ped, style.combatMovement)
+    SetPedCombatRange(ped, style.combatRange)
+    SetPedCombatAbility(ped, 2) -- Professional
+
+    -- Accuracy
+    local accuracy = math.random(Config.CombatAI.accuracy.min, Config.CombatAI.accuracy.max)
+    SetPedAccuracy(ped, accuracy)
+
+    -- Perception
+    SetPedSeeingRange(ped, 100.0)
+    SetPedHearingRange(ped, 80.0)
+    SetPedAlertness(ped, 3)
+
+    -- Combat attributes
+    SetPedCombatAttributes(ped, 46, true)  -- Can fight armed peds on foot
+    SetPedCombatAttributes(ped, 5, true)   -- Can attack you
+    SetPedCombatAttributes(ped, 0, true)   -- Can use cover
+
+    -- Cover system
+    if Config.CombatAI.enableCoverSystem and style.useCover then
+        SetPedCombatAttributes(ped, 1, true)  -- Will use cover
+        SetPedCombatAttributes(ped, 2, true)  -- Can do drivebys
+    end
+
+    -- Flee behavior
+    if Config.CombatAI.enableRetreat and style.fleeHealthThreshold > 0 then
+        SetPedFleeAttributes(ped, 0, false) -- Don't flee immediately
+        -- Monitor health for retreat
+        CreateThread(function()
+            while DoesEntityExist(ped) and not IsEntityDead(ped) do
+                Wait(1000)
+                local health = GetEntityHealth(ped)
+                local maxHealth = GetEntityMaxHealth(ped)
+                local healthPercent = (health / maxHealth) * 100
+
+                if healthPercent <= style.fleeHealthThreshold then
+                    TaskSmartFleePed(ped, PlayerPedId(), 100.0, -1, false, false)
+                    break
                 end
+            end
+        end)
+    end
+end
 
-                for gangName, gangData in pairs(Config.Gangs) do
-                    -- Make sure gangData.models exists
-                    if gangData and gangData.models then
-                        for _, model in ipairs(gangData.models) do
-                            if GetHashKey(model) == entityModel then
-                                print("^3INFO:^0 Player attacked gang member from " .. gangName)
-                                TriggerServerEvent('gangWars:playerAttackedGang', gangName)
-                                return  
-                            end
-                        end
+-- Recruitment system - NPC calls for backup
+local function TriggerRecruitment(ped, gangName)
+    if not Config.CombatAI.enableRecruitment then return end
+
+    local gangData = Config.GangData[gangName]
+    if not gangData then return end
+
+    local style = Config.CombatAI.styles[gangData.combatStyle]
+    if not style or not style.recruitNearby then return end
+
+    local pedCoords = GetEntityCoords(ped)
+    local recruits = 0
+
+    -- Find nearby peds to recruit
+    for _, npcData in pairs(spawnedNPCs) do
+        if npcData.gangName == gangName and DoesEntityExist(npcData.entity) and npcData.entity ~= ped then
+            local dist = #(pedCoords - GetEntityCoords(npcData.entity))
+
+            if dist < Config.CombatAI.recruitmentRadius then
+                -- Make this NPC join the fight
+                if not IsPedInCombat(npcData.entity) then
+                    TaskCombatHatedTargetsAroundPed(npcData.entity, 100.0, 0)
+                    recruits = recruits + 1
+
+                    if recruits >= Config.CombatAI.maxRecruits then
+                        break
                     end
                 end
             end
         end
-        
+    end
+
+    if Config.Debug and recruits > 0 then
+        print('[GangAI] Recruited ' .. recruits .. ' nearby ' .. gangName .. ' NPCs')
+    end
+end
+
+-- ============================================
+-- NPC SPAWNING
+-- ============================================
+
+local function SpawnGangNPC(gangName, gangData, coords, relationshipHash)
+    -- Select random model
+    local modelName = gangData.models[math.random(#gangData.models)]
+    local modelHash = GetHashKey(modelName)
+
+    RequestModel(modelHash)
+    local timeout = 0
+    while not HasModelLoaded(modelHash) and timeout < 5000 do
+        Wait(100)
+        timeout = timeout + 100
+    end
+
+    if not HasModelLoaded(modelHash) then
+        if Config.Debug then
+            print('[GangAI] Failed to load model: ' .. modelName)
+        end
+        return nil
+    end
+
+    -- Random offset from center
+    local angle = math.random() * 2 * math.pi
+    local dist = math.random() * Config.AmbientSpawning.spawnRadius * 0.5
+    local spawnX = coords.x + dist * math.cos(angle)
+    local spawnY = coords.y + dist * math.sin(angle)
+    local spawnZ = coords.z
+
+    -- Get ground Z
+    local foundGround, groundZ = GetGroundZFor_3dCoord(spawnX, spawnY, spawnZ + 10.0, false)
+    if foundGround then
+        spawnZ = groundZ
+    end
+
+    local ped = CreatePed(4, modelHash, spawnX, spawnY, spawnZ, math.random(0, 360) + 0.0, true, true)
+
+    if not DoesEntityExist(ped) then
+        SetModelAsNoLongerNeeded(modelHash)
+        return nil
+    end
+
+    -- Set relationship group
+    SetPedRelationshipGroupHash(ped, relationshipHash)
+
+    -- Give weapon
+    if gangData.weapons and #gangData.weapons > 0 then
+        local weapon = gangData.weapons[math.random(#gangData.weapons)]
+        GiveWeaponToPed(ped, GetHashKey(weapon), 255, false, true)
+    end
+
+    -- Apply combat AI
+    ApplyCombatAI(ped, gangData)
+
+    -- Apply scenario if peaceful
+    if gangData.scenarios and #gangData.scenarios > 0 and not inCombat then
+        local scenario = gangData.scenarios[math.random(#gangData.scenarios)]
+        TaskStartScenarioInPlace(ped, scenario, 0, true)
+    end
+
+    -- Set as enemy to player (if different gang)
+    if playerGang ~= gangName then
+        SetPedAsEnemy(ped, true)
+    end
+
+    SetModelAsNoLongerNeeded(modelHash)
+
+    -- Track this NPC
+    local npcData = {
+        entity = ped,
+        gangName = gangName,
+        spawnTime = GetGameTimer(),
+        coords = vector3(spawnX, spawnY, spawnZ)
+    }
+    spawnedNPCs[ped] = npcData
+
+    -- Despawn timer
+    SetTimeout(Config.AmbientSpawning.despawnDelay, function()
+        if DoesEntityExist(ped) and not IsPedInCombat(ped) then
+            DeleteEntity(ped)
+            spawnedNPCs[ped] = nil
+            TriggerServerEvent('gangai:server:npcDespawned', 1)
+        end
+    end)
+
+    return ped
+end
+
+-- Spawn ambient NPCs event
+RegisterNetEvent('gangai:client:spawnAmbientNPCs', function(data)
+    if not data or not data.gangData then return end
+
+    for i = 1, data.count do
+        local ped = SpawnGangNPC(data.gangName, data.gangData, data.coords, data.relationshipHash)
+        if ped then
+            Wait(100) -- Stagger spawns
+        end
+    end
+
+    if Config.Debug then
+        print('[GangAI] Spawned ' .. data.count .. ' ' .. data.gangName .. ' NPCs')
+    end
+end)
+
+-- Spawn war reinforcements
+RegisterNetEvent('gangai:client:spawnWarReinforcements', function(data)
+    if not data or not data.gangData then return end
+
+    local playerCoords = GetEntityCoords(PlayerPedId())
+    local dist = #(playerCoords - vector3(data.coords.x, data.coords.y, data.coords.z))
+
+    -- Only spawn if player is nearby
+    if dist > 300.0 then return end
+
+    for i = 1, data.count do
+        local ped = SpawnGangNPC(data.gangName, data.gangData, data.coords, data.relationshipHash)
+        if ped then
+            -- War NPCs are immediately aggressive
+            TaskCombatHatedTargetsAroundPed(ped, 150.0, 0)
+            Wait(100)
+        end
+    end
+
+    if Config.Debug then
+        local role = data.isDefender and 'defenders' or 'attackers'
+        print('[GangAI] Spawned ' .. data.count .. ' ' .. data.gangName .. ' ' .. role)
+    end
+end)
+
+-- Clear all NPCs
+RegisterNetEvent('gangai:client:clearAllNPCs', function()
+    local count = 0
+    for ped, _ in pairs(spawnedNPCs) do
+        if DoesEntityExist(ped) then
+            DeleteEntity(ped)
+            count = count + 1
+        end
+    end
+    spawnedNPCs = {}
+
+    if Config.Debug then
+        print('[GangAI] Cleared ' .. count .. ' NPCs')
+    end
+end)
+
+-- ============================================
+-- COMBAT DETECTION
+-- ============================================
+
+CreateThread(function()
+    while true do
+        local tickRate = GetOptimalTickRate()
+        Wait(tickRate)
+
+        local ped = PlayerPedId()
+
+        -- Check if player is shooting at gang NPCs
+        if IsPedShooting(ped) then
+            local _, entity = GetEntityPlayerIsFreeAimingAt(PlayerId())
+
+            if DoesEntityExist(entity) and not IsPedAPlayer(entity) then
+                -- Check if this is one of our spawned NPCs
+                local npcData = spawnedNPCs[entity]
+                if npcData then
+                    -- Trigger recruitment for that gang
+                    TriggerRecruitment(entity, npcData.gangName)
+
+                    -- Notify police
+                    local coords = GetEntityCoords(entity)
+                    TriggerServerEvent('gangai:server:notifyPolice', 'Shots fired in gang territory!', coords)
+                end
+            end
+        end
+    end
+end)
+
+-- ============================================
+-- AMBIENT SPAWNING LOOP
+-- Uses rcore territories when available
+-- ============================================
+
+CreateThread(function()
+    Wait(5000) -- Initial delay
+
+    while true do
+        local tickRate = GetOptimalTickRate()
+        Wait(tickRate)
+
+        if not Config.AmbientSpawning.enabled then
+            Wait(5000)
+            goto continue
+        end
+
+        local ped = PlayerPedId()
+        local coords = GetEntityCoords(ped)
+
+        -- Try to get territories from rcore
+        local territories = {}
+
+        local rcoreAvailable = GetResourceState(Config.Integration.rcoreResource) == 'started'
+        if rcoreAvailable then
+            local success, zones = pcall(function()
+                return exports[Config.Integration.rcoreResource]:GetNearbyZones(coords, Config.AmbientSpawning.playerTriggerDistance)
+            end)
+
+            if success and zones then
+                for _, zone in ipairs(zones) do
+                    if zone.owner and zone.owner ~= 'none' then
+                        territories[#territories + 1] = {
+                            gangName = zone.owner:lower(),
+                            coords = zone.coords,
+                            zoneId = zone.id
+                        }
+                    end
+                end
+            end
+        end
+
+        -- Process each territory
+        for _, territory in ipairs(territories) do
+            local gangData = Config.GangData[territory.gangName]
+            if gangData then
+                -- Check cooldown
+                local lastSpawn = lastSpawnTime[territory.zoneId] or 0
+                if GetGameTimer() - lastSpawn > Config.AmbientSpawning.respawnCooldown then
+
+                    -- Determine heat level
+                    local heatLevel = 'peaceful'
+                    if inCombat then
+                        heatLevel = 'wartime'
+                    end
+
+                    -- Request spawn from server
+                    TriggerServerEvent('gangai:server:requestAmbientSpawn', territory.gangName, territory.coords, heatLevel)
+                    lastSpawnTime[territory.zoneId] = GetGameTimer()
+                end
+            end
+        end
+
         ::continue::
     end
 end)
 
--- Spawn gang members event handler
-RegisterNetEvent("gangwars:spawnGangMembers")
-AddEventHandler("gangwars:spawnGangMembers", function(gangData)
-    if not gangData or not gangData.territory or not gangData.models then
-        print("^1ERROR:^0 Invalid gang data provided for spawning members")
-        return
-    end
-    
-    local minPeds = (Config.GangSpawnSettings and Config.GangSpawnSettings.minPeds) or 2
-    local maxPeds = (Config.GangSpawnSettings and Config.GangSpawnSettings.maxPeds) or 5
-    local numPedsToSpawn = math.random(minPeds, maxPeds)
-    
-    print("^3INFO:^0 Spawning " .. numPedsToSpawn .. " gang members")
-    
-    -- Create a relationship group for these gang members
-    local relationshipGroup = "GANG_" .. math.random(9999)
-    AddRelationshipGroup(relationshipGroup)
-    SetRelationshipBetweenGroups(5, GetHashKey(relationshipGroup), GetHashKey("PLAYER"))
-    
-    for i = 1, numPedsToSpawn do
-        -- Make sure we have territory points to use
-        if #gangData.territory == 0 then
-            print("^1ERROR:^0 No territory points available for gang")
-            return
-        end
-        
-        local spawnPoint = gangData.territory[math.random(#gangData.territory)]
-        local model = gangData.models[math.random(#gangData.models)]
+-- ============================================
+-- CLEANUP LOOP
+-- Despawn distant NPCs
+-- ============================================
 
-        RequestModel(GetHashKey(model))
-        while not HasModelLoaded(GetHashKey(model)) do
-            Citizen.Wait(100)
-        end
+CreateThread(function()
+    while true do
+        Wait(Config.CleanupInterval or 60000)
 
-        local ped = CreatePed(4, GetHashKey(model), spawnPoint.x, spawnPoint.y, spawnPoint.z, 0.0, true, true)
+        local ped = PlayerPedId()
+        local coords = GetEntityCoords(ped)
+        local cleaned = 0
 
-        -- If the gang has specific clothing defined, apply it
-        if gangData.clothing then
-            for componentId, data in pairs(gangData.clothing) do
-                if type(componentId) == 'number' and type(data) == 'table' and data.drawable and data.texture then
-                    SetPedComponentVariation(ped, componentId, data.drawable, data.texture, 0)
+        for npcPed, npcData in pairs(spawnedNPCs) do
+            if DoesEntityExist(npcPed) then
+                local npcCoords = GetEntityCoords(npcPed)
+                local dist = #(coords - npcCoords)
+
+                -- Despawn if too far and not in combat
+                if dist > Config.AmbientSpawning.despawnDistance and not IsPedInCombat(npcPed) then
+                    DeleteEntity(npcPed)
+                    spawnedNPCs[npcPed] = nil
+                    cleaned = cleaned + 1
                 end
-            end
-        end
-
-        -- Assign Weapons based on new config
-        if gangData.weapons and Config.GangSpawnSettings and Config.GangSpawnSettings.armed then
-            local weapon = gangData.weapons[math.random(#gangData.weapons)]
-            GiveWeaponToPed(ped, GetHashKey(weapon), 255, false, true)
-            SetCurrentPedWeapon(ped, GetHashKey(weapon), true)
-        elseif Config.GangSpawnSettings and Config.GangSpawnSettings.armed then
-            -- Fallback to default weapon if no specific ones defined
-            GiveWeaponToPed(ped, GetHashKey("WEAPON_MICROSMG"), 255, false, true)
-            SetCurrentPedWeapon(ped, GetHashKey("WEAPON_MICROSMG"), true)
-        end
-        
-        -- Make NPCs Aggressive
-        SetPedCombatAttributes(ped, 46, true)  
-        SetPedCombatAttributes(ped, 5, true)  
-        SetPedAsEnemy(ped, true)
-        SetPedRelationshipGroupHash(ped, GetHashKey(relationshipGroup))
-
-        -- Improved NPC Combat Behavior
-        Citizen.Wait(math.random(1000, 3000))  
-        TaskCombatHatedTargetsAroundPed(ped, 150.0, 0)  
-        SetPedCombatMovement(ped, 3)  
-        SetPedCombatAbility(ped, 2)  
-        SetPedCombatRange(ped, 2)  
-        SetPedCombatAttributes(ped, 46, true)  
-        SetPedCombatAttributes(ped, 0, true)   
-        
-        SetPedAccuracy(ped, 60)  
-        SetPedSeeingRange(ped, 100.0)  
-        SetPedHearingRange(ped, 80.0)  
-        SetPedAlertness(ped, 3)  
-        TaskReloadWeapon(ped, true)  
-
-        -- Apply scenario if available
-        if Config.Ambience and Config.Ambience[gangName] and Config.Ambience[gangName].scenerios then
-            local scenarios = Config.Ambience[gangName].scenerios
-            if #scenarios > 0 then
-                local scenario = scenarios[math.random(#scenarios)]
-                TaskStartScenarioInPlace(ped, scenario, 0, true)
-            end
-        end
-
-        SetModelAsNoLongerNeeded(GetHashKey(model))
-        
-        -- Clean up ped after despawn time
-        local despawnTime = (Config.GangSpawnSettings and Config.GangSpawnSettings.despawnTime) or 120000
-        Citizen.SetTimeout(despawnTime, function()
-            if DoesEntityExist(ped) then
-                DeleteEntity(ped)
-            end
-        end)
-    end
-end)
-
--- Spawn territory props
-RegisterNetEvent("gangwars:spawnTerritoryProps")
-AddEventHandler("gangwars:spawnTerritoryProps", function(gangName, territory)
-    if not Config.TerritoryProps or not Config.TerritoryProps[gangName] or not territory then
-        return
-    end
-
-    local props = Config.TerritoryProps[gangName]
-    local radius = Config.TerritoryRadius or 100.0
-    
-    for _, prop in ipairs(props) do
-        -- Choose a random position within the territory radius
-        local angle = math.random() * 2 * math.pi
-        local distance = math.random() * radius
-        local basePoint = territory[math.random(#territory)]
-        
-        local x = basePoint.x + distance * math.cos(angle)
-        local y = basePoint.y + distance * math.sin(angle)
-        local z = basePoint.z
-        
-        -- Request model
-        local modelHash = GetHashKey(prop.model)
-        RequestModel(modelHash)
-        while not HasModelLoaded(modelHash) do
-            Citizen.Wait(100)
-        end
-        
-        -- Create object
-        local heading = 0.0
-        if prop.heading then
-            heading = math.random(0, 359) + 0.0
-        end
-        
-        local object = CreateObject(modelHash, x, y, z, false, false, true)
-        if object and DoesEntityExist(object) then
-            SetEntityHeading(object, heading)
-            PlaceObjectOnGroundProperly(object)
-            FreezeEntityPosition(object, true)
-            
-            -- Clean up after some time
-            Citizen.SetTimeout(600000, function() -- 10 minutes
-                if DoesEntityExist(object) then
-                    DeleteEntity(object)
-                end
-            end)
-        end
-        
-        SetModelAsNoLongerNeeded(modelHash)
-    end
-end)
-
--- Join gang command
-RegisterCommand('joingang', function(source, args)
-    local gang = args[1]
-    if not gang or not Config.Gangs[gang] then
-        local availableGangs = getGangNames()
-        lib.notify({
-            title = 'Error',
-            description = 'Invalid gang name. Available: ' .. table.concat(availableGangs, ', '),
-            type = 'error',
-            duration = 5000
-        })
-        return
-    end
-    TriggerServerEvent('gangWars:playerJoinedGang', gang)
-end, false)
-
--- Helper function to get all gang names
-function getGangNames()
-    local names = {}
-    for name, _ in pairs(Config.Gangs or {}) do
-        table.insert(names, name)
-    end
-    return names
-end
-
--- Add debug command to check gang information
-RegisterCommand('checkgangs', function()
-    if Config and Config.Gangs then
-        local message = "Loaded Gangs: "
-        local gangs = getGangNames()
-        message = message .. table.concat(gangs, ", ")
-        
-        lib.notify({
-            title = 'Gang Info',
-            description = message,
-            type = 'info',
-            duration = 5000
-        })
-    else
-        lib.notify({
-            title = 'Error',
-            description = 'Config.Gangs is not loaded properly',
-            type = 'error',
-            duration = 5000
-        })
-    end
-end, false)
-
--- Add this initialization code for testing
-Citizen.CreateThread(function()
-    Citizen.Wait(5000) -- Wait for everything to load
-    print("^2DEBUG:^0 GangWars script initialized")
-    print("^2DEBUG:^0 Gang territories loaded:")
-    
-    if Config and Config.Gangs then
-        for gang, data in pairs(Config.Gangs) do
-            if data.territory and #data.territory > 0 then
-                print("^2DEBUG:^0 " .. gang .. ": " .. data.territory[1].x .. ", " .. data.territory[1].y .. ", " .. data.territory[1].z)
             else
-                print("^1ERROR:^0 No territory data for " .. gang)
+                -- Entity no longer exists, clean up tracking
+                spawnedNPCs[npcPed] = nil
+                cleaned = cleaned + 1
             end
         end
-    else
-        print("^1ERROR:^0 Config.Gangs not loaded properly")
+
+        if cleaned > 0 then
+            TriggerServerEvent('gangai:server:npcDespawned', cleaned)
+            if Config.Debug then
+                print('[GangAI] Cleaned up ' .. cleaned .. ' distant/dead NPCs')
+            end
+        end
     end
 end)
 
--- Add ambient gang spawning if enabled
-if Config.EnableAmbientGangs then
-    Citizen.CreateThread(function()
-        while true do
-            Citizen.Wait(30000) -- Check every 30 seconds
-            
-            local playerPed = PlayerPedId()
-            local playerCoords = GetEntityCoords(playerPed)
-            
-            for gangName, gangData in pairs(Config.Gangs or {}) do
-                if gangData.territory and #gangData.territory > 0 then
-                    -- Check if player is within territory radius
-                    for _, point in ipairs(gangData.territory) do
-                        local distance = #(vector3(playerCoords.x, playerCoords.y, playerCoords.z) - 
-                                          vector3(point.x, point.y, point.z))
-                        
-                        if distance < (Config.TerritoryRadius or 100.0) then
-                            -- Randomly decide if we spawn gang members (30% chance)
-                            if math.random() < 0.3 then
-                                TriggerEvent('gangwars:spawnGangMembers', gangData)
-                                -- Also spawn props in territory
-                                TriggerEvent('gangwars:spawnTerritoryProps', gangName, gangData.territory)
-                            end
-                            break
-                        end
-                    end
-                end
-            end
-        end
-    end)
-end
+-- ============================================
+-- INITIALIZATION
+-- ============================================
+
+CreateThread(function()
+    Wait(3000)
+
+    -- Sync player relationship
+    TriggerServerEvent('gangai:server:syncPlayerRelationship')
+
+    if Config.Debug then
+        print('[GangAI] Client initialized')
+        print('[GangAI] Tick rates: combat=' .. Config.AmbientSpawning.tickRates.combat ..
+              'ms, nearby=' .. Config.AmbientSpawning.tickRates.nearby ..
+              'ms, distant=' .. Config.AmbientSpawning.tickRates.distant ..
+              'ms, background=' .. Config.AmbientSpawning.tickRates.background .. 'ms')
+    end
+end)
